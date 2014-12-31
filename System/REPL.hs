@@ -54,7 +54,7 @@ import Text.Read (readMaybe)
 putErr :: ListLikeIO full item => full -> IO ()
 putErr = hPutStr IO.stderr
 
--- |Prints a string, followed by a newcline character, to stderr.
+-- |Prints a string, followed by a newline character, to stderr.
 putErrLn :: ListLikeIO full item => full -> IO ()
 putErrLn = hPutStrLn IO.stderr
 
