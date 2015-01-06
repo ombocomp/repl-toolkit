@@ -17,7 +17,6 @@ module System.REPL (
    --  around them (per their Read-instance). If you want to get the user's
    --  input as-is, use the 'Verbatim' type.
    Asker(..),
-   Success(..),
    AskFailure(..),
    asker,
    typeAsker,
@@ -84,10 +83,8 @@ data Asker m a = Asker{ -- |The prompt to be displayed to the user.
                         -- |The predicate which the input, once read,
                         --  must fulfill. It either delivers 'Success'
                         --  or an error message.
-                        askerPredicate::a -> m (Either Text Success)}
+                        askerPredicate::a -> m (Either Text ()))}
 
--- |Singleton type representing success.
-data Success = Success deriving (Eq, Show, Read)
 
 -- |Represents a failure of an ask function.
 --  It can either be a type failure (failure to interpret the
@@ -140,7 +137,7 @@ asker :: (Monad m, Functor m, Read a)
 asker pr errT errP pred = Asker pr parse check
    where
       parse = maybe (Left errT) Right . readMaybe . T.unpack
-      check = pred >=$> (\case True  -> Right Success
+      check = pred >=$> (\case True  -> Right ()
                                False -> Left errP)
 
 -- |Creates an 'Asker' which just cares about the type of the input.
@@ -177,8 +174,8 @@ maybeAsker pr errT errP pred = Asker pr parse check
                                         $ readMaybe
                                         $ T.unpack t
 
-      check Nothing = return $ Right Success
-      check (Just t) = pred t >$> (\case True  -> Right Success
+      check Nothing = return $ Right ()
+      check (Just t) = pred t >$> (\case True  -> Right ()
                                          False -> Left errP)
 
 -- Running askers
@@ -194,7 +191,7 @@ maybeAsker pr errT errP pred = Asker pr parse check
 --  Since the predicate is of monadic, arbitrarily complex
 --  tests can be performed: checking whether an item is in a database,
 --  whether a date was less than x years ago, etc.
-ask :: (MonadIO m, MonadError SomeException m, Functor m, Read a)
+ask :: (MonadIO m, MonadError SomeException m, Functor m)
     => Asker m a
     -> Maybe Text
     -> m a
@@ -210,7 +207,7 @@ ask a v = maybe ((liftIO . prompt' . askerPrompt $ a) >>= check)
 
 -- |See 'ask'. Always reads the input from stdin.
 --  @ask' a = ask a Nothing@.
-ask' :: (MonadIO m, MonadError SomeException m, Functor m, Read a)
+ask' :: (MonadIO m, MonadError SomeException m, Functor m)
      => Asker m a
      -> m a
 ask' a = ask a Nothing
