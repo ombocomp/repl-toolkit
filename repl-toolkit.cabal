@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                repl-toolkit
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            Toolkit for quickly whipping up command-line interfaces.
 description:         A simple toolkit for quickly whipping up REPLs, input validation and sets of commands included.
 homepage:            https://github.com/ombocomp/repl-toolkit
@@ -13,6 +13,10 @@ maintainer:          janos.tapolczai@gmail.com
 category:            System, REPL
 build-type:          Simple
 cabal-version:       >=1.10
+
+source-repository head
+  type: git
+  location: git://github.com/ombocomp/repl-toolkit.git
 
 library
   exposed-modules:     System.REPL, System.REPL.State, System.REPL.Command
