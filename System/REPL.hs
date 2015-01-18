@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 
 -- |Functions to expedite the building of REPLs.
@@ -66,8 +67,8 @@ module System.REPL (
 import Prelude hiding (putStrLn, putStr, getLine, reverse)
 
 import Control.Arrow (right, (|||))
-import Control.Exception
-import Control.Monad.Except
+import Control.Monad.Catch
+import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Char (isSpace)
 import Data.Functor.Monadic
 import Data.ListLike(ListLike(empty, cons, reverse))
@@ -103,19 +104,23 @@ prompt' s = liftIO (putStr s >> IO.hFlush IO.stdout >> getLine)
 --  (commonly @'\ESC'@). This function temporarily tries to set the buffering mode
 --  to NoBuffering via 'System.IO.hSetBuffering', which may not be supported.
 --  See the documentation of 'System.IO.hSetBuffering' for details.
-promptAbort :: (MonadIO m, ListLikeIO full item, ListLikeIO full' Char)
-            => Char -> full -> m (Maybe full')
-promptAbort abortChar s = liftIO (do putStr s
-                                     IO.hFlush IO.stdout
-                                     bufMode <- IO.hGetBuffering IO.stdin
-                                     IO.hSetBuffering IO.stdin IO.NoBuffering
-                                     input <- getUntil empty
-                                     IO.hSetBuffering IO.stdin bufMode
-                                     return $ input >$> reverse)
+promptAbort :: (MonadIO m, ListLikeIO full item, ListLikeIO full' Char,
+                MonadCatch m)
+            => Char -> full -> m full'
+promptAbort abortChar s = do
+   liftIO $ putStr s
+   liftIO $ IO.hFlush IO.stdout
+   bufMode <- liftIO $ IO.hGetBuffering IO.stdin
+   liftIO $ IO.hSetBuffering IO.stdin IO.NoBuffering
+   input <- getUntil empty
+            `catch` (\(e :: AskFailure) ->
+                        liftIO (IO.hSetBuffering IO.stdin bufMode) >> throwM e)
+   liftIO $ IO.hSetBuffering IO.stdin bufMode
+   return $ reverse input
    where
-      getUntil acc = do c <- getChar
-                        if c == abortChar then return Nothing
-                        else if c == '\n' then return $ Just acc
+      getUntil acc = do c <- liftIO $ getChar
+                        if c == abortChar then throwM AbortFailure
+                        else if c == '\n' then return acc
                         else                   getUntil (cons c acc)
 
 -- Askers
@@ -282,34 +287,33 @@ maybeAsker pr errT errP pred = maybeAskerP pr errP (readParser errT) pred
 -- Running askers
 --------------------------------------------------------------------------------
 
--- |Executes an Asker. If the process fails, an exception is thrown
---  The canonical instance of @MonadError SomeException@ is the 'ExceptT' monad.
-ask :: (MonadIO m, MonadError SomeException m, Functor m)
+-- |Executes an Asker. If the process fails, an exception is thrown.
+ask :: (MonadIO m, MonadCatch m, Functor m)
     => Asker m a
     -> Maybe Text
     -> m a
-ask a v = askEither a v >>= either (throwError . SomeException) return
+ask a v = askEither a v >>= either throwM return
 
 -- |See 'ask'. Always reads the input from stdin.
 --
 -- @
 -- ask' a = ask a Nothing
 -- @
-ask' :: (MonadIO m, MonadError SomeException m, Functor m)
+ask' :: (MonadIO m, MonadCatch m, Functor m)
      => Asker m a
      -> m a
 ask' a = ask a Nothing
 
 -- |Executes an 'Asker'. If the Text argument is Nothing, the user is asked
 --  to enter a line on stdin. If it is @Just x@, @x@ is taken to be input.
-askEither :: (MonadIO m, Functor m)
+askEither :: (MonadIO m, MonadCatch m, Functor m)
           => Asker m a
           -> Maybe Text
           -> m (Either AskFailure a)
 askEither a = maybe getInput check
    where
-      getInput = promptAbort '\ESC' (askerPrompt a)
-                 >>= maybe (return $ Left AbortFailure) check
+      getInput = (promptAbort '\ESC' (askerPrompt a) >>= check)
+                 `catch` (return . Left)
 
       check inp = case askerParser a inp of
          Left err -> return $ Left $ TypeFailure err
@@ -318,7 +322,10 @@ askEither a = maybe getInput check
 
 -- |Repeatedly executes an ask action until the user enters a valid value.
 --  Error messages are printed each time.
-untilValid :: (MonadIO m, MonadError SomeException m, Functor m, Read a)
+untilValid :: forall m a.(MonadIO m, MonadCatch m, Functor m, Read a)
            => m a
            -> m a
-untilValid m = m `catchError` (\l -> liftIO (putStrLn (show l)) >> untilValid m)
+untilValid m = m `catch` handler
+   where
+      handler :: AskFailure -> m a
+      handler l = liftIO (putStrLn $ show l) >> untilValid m

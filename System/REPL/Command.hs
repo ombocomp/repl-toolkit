@@ -54,9 +54,9 @@ import Prelude hiding (putStrLn, putStr, getLine, unwords, words, (!!), (++),
 import qualified Prelude as P
 
 import Control.Arrow (left)
-import Control.Exception
 import Control.Monad
-import Control.Monad.Except
+import Control.Monad.Catch
+import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Loops (unfoldrM)
 import Data.Char (isSpace)
 import Data.Functor.Monadic
@@ -99,6 +99,8 @@ instance Functor m => Functor (Command m) where
 
 data ParamNumError = NoParams | ExactParams | TooManyParams
    deriving (Enum, Show, Eq, Read, Typeable, Ord)
+
+instance Exception ParamNumError
 
 -- |Prints information (the command name, description and, if given,
 --  the number of parameters) about a command to the console.
@@ -172,10 +174,8 @@ paramErr c inp minNum maxNum errType =
                 c ++ " takes at most " ++ T.pack (show (fromPeano maxNum :: Integer)) ++ " parameters."]
 
 -- |Checks the number of parameters before executing a monadic function.
---  For compatibility (with the IO monad, mainly), the nominal type
---  of the thrown exception is 'SomeException', but only AskFailures will
---  actually be thrown in this function (other IO exceptions may occur).
-checkParams :: (MonadIO m, MonadError SomeException m, Functor m)
+--  Only AskFailures (and IOExceptions) will be thrown in this function.
+checkParams :: (MonadIO m, MonadThrow m, Functor m)
             => Text -- ^The command name.
             -> Text -- ^The raw input (including the command name).
             -> Int -- ^The minimal number of parameters, excluding the command's name.
@@ -186,11 +186,11 @@ checkParams :: (MonadIO m, MonadError SomeException m, Functor m)
                    --  passed, this will be a 'ParamNumFailure'.
 checkParams n inp minNum maxNum m =
    case readArgs inp of
-      Left l  -> throwError (SomeException $ ParamFailure l)
+      Left l  -> throwM (ParamFailure l)
       Right r ->
          if natLength r > maxNum + 1 then
-            throwError $ SomeException $ ParamFailure
-                       $ paramErr n r minNum maxNum (errKind $ natLength r)
+            throwM $ ParamFailure
+                   $ paramErr n r minNum maxNum (errKind $ natLength r)
          else m r
    where
       errKind len = if minNum == 0 && 0 == maxNum then NoParams
@@ -210,7 +210,7 @@ quoteArg x = if T.null x || T.head x /= '\"'
                 else x
 
 -- |Creates a command without parameters.
-makeCommand :: (MonadIO m, MonadError SomeException m,
+makeCommand :: (MonadIO m, MonadCatch m,
                 Functor m)
             => Text -- ^Command name.
             -> (Text -> Bool) -- ^Command test.
@@ -224,7 +224,7 @@ makeCommand n t d f =
                  f li
 
 -- |Creates a command with one parameter.
-makeCommand1 :: (MonadIO m, MonadError SomeException m, Functor m, Read a)
+makeCommand1 :: (MonadIO m, MonadCatch m, Functor m, Read a)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
@@ -239,7 +239,7 @@ makeCommand1 n t d p1 f =
                  f li x1
 
 -- |Creates a command with two parameters.
-makeCommand2 :: (MonadIO m, MonadError SomeException m, Functor m, Read a,
+makeCommand2 :: (MonadIO m, MonadCatch m, Functor m, Read a,
                 Read b)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
@@ -257,7 +257,7 @@ makeCommand2 n t d p1 p2 f =
                  f li x1 x2
 
 -- |Creates a command with three parameters.
-makeCommand3 :: (MonadIO m, MonadError SomeException m, Functor m, Read a,
+makeCommand3 :: (MonadIO m, MonadCatch m, Functor m, Read a,
                  Read b, Read c)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
@@ -277,7 +277,7 @@ makeCommand3 n t d p1 p2 p3 f =
                  f li x1 x2 x3
 
 -- |Creates a command with four parameters.
-makeCommand4 :: (MonadIO m, MonadError SomeException m, Functor m, Read a,
+makeCommand4 :: (MonadIO m, MonadCatch m, Functor m, Read a,
                  Read b, Read c, Read d)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
@@ -299,7 +299,7 @@ makeCommand4 n t d p1 p2 p3 p4 f =
                  f li x1 x2 x3 x4
 
 -- |Creates a command with five parameters.
-makeCommand5 :: (MonadIO m, MonadError SomeException m, Functor m, Read a,
+makeCommand5 :: (MonadIO m, MonadCatch m, Functor m, Read a,
                  Read b, Read c, Read d, Read e)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
@@ -323,7 +323,7 @@ makeCommand5 n t d p1 p2 p3 p4 p5 f =
                  f li x1 x2 x3 x4 x5
 
 -- |Creates a command with four parameters.
-makeCommand6 :: (MonadIO m, MonadError SomeException m, Functor m, Read a,
+makeCommand6 :: (MonadIO m, MonadCatch m, Functor m, Read a,
                  Read b, Read c, Read d, Read e, Read f)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
@@ -355,7 +355,7 @@ makeCommand6 n t d p1 p2 p3 p4 p5 p6 f =
 --  If the number of passed parameters exceeds
 --  @length necc + length opt@, or if any 'Asker' fails,
 --  the command returns an 'AskFailure'.
-makeCommandN :: (MonadIO m, MonadError SomeException m, Functor m, Read a)
+makeCommandN :: (MonadIO m, MonadCatch m, Functor m, Read a)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
@@ -391,15 +391,15 @@ makeCommandN n t d necc opt f = Command n t d Nothing (\inp -> checkParams n inp
 --  trying the out in sequence. The first command whose 'commandTest'
 --  returns True is executed. If none of the commands match,
 --  @NothingFoundFailure@ is thrown.
-commandDispatch :: (MonadIO m, MonadError SomeException m, Functor m)
+commandDispatch :: (MonadIO m, MonadCatch m, Functor m)
                 => Text -- ^The user's input.
                 -> [Command m z] -- ^The command library.
                 -> m z
 commandDispatch input cs =
    case readArgs input of
-      Left l -> throwError (SomeException $ ParamFailure l)
+      Left l -> throwM (ParamFailure l)
       Right input' -> if noMatch input'
-                      then throwError (SomeException NothingFoundFailure)
+                      then throwM NothingFoundFailure
                       else do runCommand (fromJust $ first input') input
    where
       noMatch = isNothing . first
