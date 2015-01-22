@@ -1,0 +1,3 @@
+0.3.1 Added functionality for reading configuration files.
+
+0.3 Ditched MonadError in favour of MonadThrow. This should make the functions much easier to use.
