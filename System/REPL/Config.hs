@@ -6,7 +6,7 @@ module System.REPL.Config (
    readConfigFile,
    readConfigJSON,
    readConfigShow,
-   NoParseError,
+   NoParseError(..),
    ) where
 
 import Prelude hiding ((++), FilePath)
@@ -27,9 +27,13 @@ import System.Directory
 import Text.Read (readMaybe)
 
 -- |Indicates that some string was not able to be parsed.
-data NoParseError = NoParseError deriving (Show, Eq, Read, Typeable)
+data NoParseError = NoParseError T.Text deriving (Show, Eq, Read, Typeable)
 
 instance Exception NoParseError
+
+-- |Creates a NoParseError out of a 'Fp.FilePath'.
+noParseError :: Fp.FilePath -> NoParseError
+noParseError = NoParseError . T.pack  .  Fp.encodeString
 
 -- |Variant of 'readConfigFile' that uses 'Show' and 'Read' for (de)serialization.
 --
@@ -42,7 +46,7 @@ readConfigShow :: forall m a.
 readConfigShow path = readConfigFile path readEither showBL
    where
       showBL = encodeUtf8 . T.pack . show
-      readEither = maybe (Left NoParseError) Right . readMaybe . T.unpack . decodeUtf8
+      readEither = maybe (Left $ noParseError path) Right . readMaybe . T.unpack . decodeUtf8
 
 -- |Variant of 'readConfigFile' that uses JSON for (de)serialization.
 --
@@ -54,7 +58,7 @@ readConfigJSON :: forall m a.
                -> m a
 readConfigJSON path = readConfigFile path decodeEither encode
    where
-      decodeEither = maybe (Left NoParseError) Right . decode
+      decodeEither = maybe (Left $ noParseError path) Right . decode
 
 -- |Tries to read a configuration from file. If the file is missing,
 --  a default instance is written to file and returned. The following
