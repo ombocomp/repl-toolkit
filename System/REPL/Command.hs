@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- |Provides Commands for REPLs. Commands take care of input
 --  and parameter-handling, and allow parameters to be supplied
@@ -12,7 +14,7 @@
 --  that one doesn't need to fiddle around with input handling in the middle
 --  of the actual command code.
 module System.REPL.Command (
-   -- *Command dispatch
+   -- *Command class
    -- |Using the 'Command' class is not necessary, but it makes dealing with
    --  user input considerably easier. When a command is run with a line of
    --  input, it automatically segments it by whitespace, tries to interpret
@@ -32,13 +34,23 @@ module System.REPL.Command (
    --  >>> ../
    --  Directory changed!
    Command(..),
-   commandInfo,
-   runOnce,
-   commandDispatch,
-   summarizeCommands,
+   runCommand,
+   runSingleCommand,
+   oneOf,
+   subcommand,
+   makeREPL,
+   -- * Exceptions
+   SomeCommandError(..),
+   MalformedParamsError(..),
+   TooFewParamsError(..),
+   TooManyParamsError(..),
+   -- * Dealing with arguments
    readArgs,
+   getName,
    quoteArg,
-   -- ** Making commands.
+   -- * Helpers
+   summarizeCommands,
+   -- * Making commands.
    makeCommand,
    makeCommand1,
    makeCommand2,
@@ -46,24 +58,29 @@ module System.REPL.Command (
    makeCommand4,
    makeCommand5,
    makeCommand6,
+   makeCommand7,
+   makeCommand8,
    makeCommandN,
    ) where
 
-import Prelude hiding (putStrLn, putStr, getLine, unwords, words, (!!), (++),
-                       length, replicate)
+import Prelude hiding (putStrLn, putStr, (++), length, replicate)
 import qualified Prelude as P
 
-import Control.Arrow (left)
+import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.IO.Class (MonadIO(liftIO))
-import Control.Monad.Loops (unfoldrM)
+import Control.Monad.Loops (unfoldrM, iterateUntil)
 import Data.Char (isSpace)
+import Data.Foldable (Foldable)
+import qualified Data.Functor.Apply as Ap
+import qualified Data.Functor.Bind as Bi
 import Data.Functor.Monadic
 import qualified Data.List as LU
 import qualified Data.List.Safe as L
 import Data.ListLike(ListLike(..))
-import Data.Maybe (fromJust, isNothing, isJust)
+import Data.Maybe (fromJust, isJust, fromMaybe)
+import Data.Monoid (mempty, Monoid)
 import Data.Ord
 import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
@@ -78,50 +95,158 @@ import qualified Text.Parsec.Token as P
 (++) :: (ListLike full item) => full -> full -> full
 (++) = append
 
+-- Exceptions
+-------------------------------------------------------------------------------
+
+-- |Generic error related to command execution.
+data SomeCommandError = forall e.Exception e => SomeCommandError e deriving (Typeable)
+instance Show SomeCommandError where show (SomeCommandError e) = show e
+instance Exception SomeCommandError
+
+commandErrorUpcast :: (Exception a) => a -> SomeException
+commandErrorUpcast = toException . SomeCommandError
+commandErrorDowncast :: (Exception a) => SomeException -> Maybe a
+commandErrorDowncast x = do {SomeCommandError y <- fromException x; cast y}
+
+   -- |The input of a command was malformed and could not interpreted. I.e.
+   --  the input contained inadmissible characters, or quotes were mismatched.
+   --  The 'Text' argument contains the parser error.
+data MalformedParamsError = MalformedParamsError Text deriving (Show, Eq, Typeable, Ord)
+instance Exception MalformedParamsError where
+   toException = commandErrorUpcast
+   fromException = commandErrorDowncast
+
+-- |Too many parameters were given to a command. The first value is the maximum,
+--  the second the actual number.
+data TooManyParamsError = TooManyParamsError Int Int deriving (Show, Eq, Typeable, Ord)
+instance Exception TooManyParamsError where
+   toException = commandErrorUpcast
+   fromException = commandErrorDowncast
+
+-- |Too few parameters were given to a command. The first value is the minium,
+--  the second the actual number.
+data TooFewParamsError = TooFewParamsError Int Int deriving (Show, Eq, Typeable, Ord)
+instance Exception TooFewParamsError where
+   toException = commandErrorUpcast
+   fromException = commandErrorDowncast
+
+-- Command type
+-------------------------------------------------------------------------------
+
 -- |A REPL command, possibly with parameters.
-data Command m a = Command{
-                  -- |The short name of the command. Purely informative.
-                  commandName :: Text,
-                  -- |Returns whether a string matches
-                  --  a command name. The simplest form is
-                  --  @s==@ for some string s, but more liberal
-                  --  matchings are possible.
-                  commandTest :: Text -> Bool,
-                  -- |A description of the command.
-                  commandDesc :: Text,
-                  -- |The number of parameters, if fixed.
-                  numParameters :: Maybe Int,
-                  -- |Runs the command with the input text as parameter.
-                  runCommand :: Text -> m a}
+data Command m i a = Command{
+                     -- |The short name of the command. Purely informative.
+                     commandName :: Text,
+                     -- |Returns whether the first part of an input
+                     --  (the command name) matches
+                     --  a the command. The simplest form is
+                     --  @((==) . getPart) s@ for some string s, but more liberal
+                     --  matchings are possible.
+                     commandTest :: i -> Bool,
+                     -- |A description of the command.
+                     commandDesc :: Text,
+                     -- |Indicates whether the command should run IO actions
+                     --  to get needed input.
+                     --canAsk :: Bool,
+                     -- |The minium and maximum number of parameters.
+                     --numParameters :: (Int, Maybe Int),
+                     -- |Runs the command with the input text as parameter,
+                     --  returning the unconsumed input.
+                     runPartialCommand :: [i] -> m (a, [i])}
 
-instance Functor m => Functor (Command m) where
-   fmap f c@Command{runCommand=run} = c{runCommand=(fmap f . run)}
+instance Functor m => Functor (Command m i) where
+   fmap f c@Command{runPartialCommand=run} = c{runPartialCommand=(fmap (first f)  . run)}
 
-data ParamNumError = NoParams | ExactParams | TooManyParams
-   deriving (Enum, Show, Eq, Read, Typeable, Ord)
+instance (Functor m, Monad m) => Ap.Apply (Command m i) where
+   -- |Runs the first command, then the second with the left-over input.
+   --  The result of the first command is applied to that of the second.
+   --
+   --  All other fields (name, description,...) of the second command are
+   --  ignored.
+   f <.> g = f{runPartialCommand = h}
+      where
+         h input = do (func, output) <- runPartialCommand f input
+                      (arg, output') <- runPartialCommand g output
+                      return (func arg, output')
 
-instance Exception ParamNumError
 
--- |Prints information (the command name, description and, if given,
---  the number of parameters) about a command to the console.
-commandInfo :: MonadIO m => Command m a -> m ()
-commandInfo c = liftIO $ do
-   putStr $ commandName c
-   putStrLn $ maybe "" ((" Parameters: " P.++) . show) (numParameters c)
-   putStrLn $ commandDesc c
+instance (Functor m, Monad m) => Bi.Bind (Command m i) where
+   -- |The same as 'Ap.<.>', but the second argument can read the result of the
+   --  first.
+   f >>- g = f{runPartialCommand = h}
+      where
+         h input = do (res, output)   <- runPartialCommand f input
+                      (res', output') <- runPartialCommand (g res) output
+                      return (res', output')
 
--- |Splits and trims the input of a command.
+-- |Runs the command with the input text as parameter, discarding any left-over
+--  input.
+runCommand :: (Functor m, Monad m, MonadThrow m) => Command m Text a -> Text -> m a
+runCommand c = fmap fst . runPartialCommand c <=< readArgs
+
+-- |Runs the command with the input text as parameter. If any input is left
+--  unconsumed, an error is thrown.
+runSingleCommand :: (MonadThrow m, Functor m) => Command m Text a -> Text -> m a
+runSingleCommand c t = do
+   t' <- readArgs t
+   (res, output) <- runPartialCommand c t'
+   let act = length t'
+       mx  = act - length output
+   when (not . L.null $ output) (throwM $ TooManyParamsError mx act)
+   return res
+
+
+-- |Takes a list @xs@ and executes the first command in a list whose
+--  'commandTest' matches the input.
+--
+--  Note that the resultant command @c@'s' 'runPartialCommand' should only be
+--  executed with an input @t@ if 'commandTest c t' == True', where @t'@ is either
+--  @head (readArgs t)@ or @mempty@ if @t@ is empty.
+--  Otherwise, the result is undefined.
+oneOf :: Monoid i
+      => Text
+         -- ^Command name.
+      -> Text
+         -- ^Command description.
+      -> [Command m i a]
+      -> Command m i a
+oneOf n d xs = Command n test d cmd
+   where
+      test t = L.any (($ t) . commandTest) xs
+      -- because of @test@, the list is guaranteed to be non-empty
+      cmd input = (`runPartialCommand` input)
+                  . LU.head
+                  . L.dropWhile (not . ($ fromMaybe mempty (L.head input)) . commandTest) $ xs
+
+-- |Adds a list of possible subcommands after a command (that should leave
+--  some input unconsumed). Ignoring all the required parameters for a moment,
+--
+--  > subcommand x xs = x >>- oneOf xs
+subcommand :: (Functor m, Monad m, Monoid i)
+           => Command m i a
+              -- ^The root command.
+           -> [a -> Command m i b]
+              -- ^The subcommands that may follow it. This list must be finite.
+           -> Command m i b
+subcommand x xs = x Bi.>>- \y -> oneOf "" "" (L.map ($ y) xs)
+
+
+-- |Splits and trims the input of a command. If the input cannot be parsed, a
+--  'MalformedCommand' exception is thrown.
+--
+--  -- * Format
+--
 --  Any non-whitespace sequence of characters is interpreted as
 --  one argument, unless double quotes (") are used, in which case
 --  they demarcate an argument. Each argument is parsed as a haskell
 --  string literal (quote-less arguments have quotes inserted around them).
---  If the number of quotes in the input is not even, the operating will fail.
 --
 --  Arguments are parsed using parsec's @stringLiteral@ (haskell-style),
 --  meaning that escape sequences and unicode characters are handled automatically.
-readArgs :: Text -> Either Text [Text]
-readArgs = (left $ T.pack . show) . P.parse parser "" . T.unpack
+readArgs :: MonadThrow m => Text -> m [Text]
+readArgs = either err return . P.parse parser "" . T.unpack
    where
+      err = throwM . MalformedParamsError . T.pack . show
       -- Main parser.
       parser = P.many (stringLiteral P.<|> unquotedLiteral)
 
@@ -142,206 +267,232 @@ readArgs = (left $ T.pack . show) . P.parse parser "" . T.unpack
             case res of (Right r) -> return r
                         (Left l) -> fail (show l)
 
--- |Takes a line of text and a command.
---  If the text matches the given command's 'commandTest',
---  the command is run with it. If not, 'Nothing' is returned.
-runOnce :: MonadIO m => Text -> Command m a -> m (Maybe a)
-runOnce l c = if commandTest c l then liftM Just (runCommand c l)
-                                 else return Nothing
-
-
--- |Returns an error message if an unexpected number of parameters have been
---  supplied.
-paramErr :: Text -- ^The command name.
-         -> [Text] -- ^The given input.
-         -> Int  -- ^The minimum number of parameters.
-         -> Nat  -- ^The maximum number of parameters. May be infinite if there
-                 --  is no upper bound.
-         -> ParamNumError -- ^The kind of error that occurred.
-         -> Text
-paramErr c inp minNum maxNum errType =
-   "The following " ++ T.pack (show num) ++ " parameters were given to " ++ c ++ ":\n"
-   ++ T.intercalate " " (maybe [] (L.map wrap) $ L.tail inp) ++ ".\n"
-   ++ (numErr LU.!! fromEnum errType)
-   where
-      -- wraps the argument in quotation marks if it contains a space
-      wrap t = if T.any isSpace t then "\"" ++ t ++ "\"" else t
-      -- number of arguments (excluding the command name)
-      num = L.length inp - 1
-      -- error message regarding how many parameters the command takes
-      numErr = [c ++ " takes no parameters.",
-                c ++ " takes " ++ T.pack (show minNum) ++ " parameters.",
-                c ++ " takes at most " ++ T.pack (show (fromPeano maxNum :: Integer)) ++ " parameters."]
-
--- |Checks the number of parameters before executing a monadic function.
---  Only AskFailures (and IOExceptions) will be thrown in this function.
-checkParams :: (MonadIO m, MonadThrow m, Functor m)
-            => Text -- ^The command name.
-            -> Text -- ^The raw input (including the command name).
-            -> Int -- ^The minimal number of parameters, excluding the command's name.
-            -> Nat -- ^The maximal number of parameters, excluding the command's name.
-                   --  This may be infinity if there is no upper bound.
-            -> ([Text] -> m a) -- ^The command.
-            -> m a -- ^Result. If too many parameters were
-                   --  passed, this will be a 'ParamNumFailure'.
-checkParams n inp minNum maxNum m =
-   case readArgs inp of
-      Left l  -> throwM (ParamFailure l)
-      Right r ->
-         if natLength r > maxNum + 1 then
-            throwM $ ParamFailure
-                   $ paramErr n r minNum maxNum (errKind $ natLength r)
-         else m r
-   where
-      errKind len = if minNum == 0 && 0 == maxNum then NoParams
-                    else if maxNum < len then TooManyParams
-                    else ExactParams
+-- |Gets the first part of a command string, or the empty string, if the comand
+--  string is empty.
+getName :: (Functor m, MonadThrow m) => Text -> m Text
+getName = fromMaybe mempty . L.head <$=< readArgs
 
 -- |Surrounds an argument in quote marks, if necessary.
 --  This is useful when arguments were extracted via 'readArgs', which deletes
---  quote marks. Quotes are placed around the input iff it doesn't begin with
---  a quote mark (\").
---  'readArgs' and 'quoteArg' are inverse up to suitable isomorphism, i.e.
---  if 'readArgs orig = (Right res)', then it holds that
---  @readArgs orig = readArgs $ intercalate " " $ map quoteArg res@
+--  quote marks. Quotes are placed around the input iff it is empty or contains
+--  whitespace.
 quoteArg :: Text -> Text
-quoteArg x = if T.null x || T.head x /= '\"'
-                then '\"' `T.cons` x `T.snoc` '\"'
-                else x
+quoteArg x = if T.null x || T.any isSpace x then '\"' `T.cons` x `T.snoc` '\"'
+                                            else x
+
 
 -- |Creates a command without parameters.
 makeCommand :: (MonadIO m, MonadCatch m,
-                Functor m)
+                Functor m, Monoid i)
             => Text -- ^Command name.
-            -> (Text -> Bool) -- ^Command test.
+            -> (i -> Bool) -- ^Command test.
             -> Text -- ^Command description.
-            -> (Text -> m a) -- ^The actual command.
-            -> Command m a
-makeCommand n t d f =
-   Command n t d (Just 0) (\inp -> checkParams n inp 0 0 c)
+            -> (i -> m z)
+               -- ^Command function. It will receive the first part of the input
+               --  (customarily the command name), or the empty string if the
+               --  input only contained whitespace.
+            -> Command m i z
+makeCommand n t d f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 f li
+      f' args = do res <- f $ fromMaybe mempty $ L.head args
+                   return (res, L.drop 1 args)
+
 
 -- |Creates a command with one parameter.
 makeCommand1 :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
+                     -- ^If True, running the command will run the Asker's
+                     --  IO action if not enough input is provided. If False
+                     --  a 'ParamNumError' will be thrown.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> (Text -> a -> m z)
-             -> Command m z
-makeCommand1 n t d p1 f =
-   Command n t d (Just 1) (\inp -> checkParams n inp 1 1 c)
+             -> (Text -> a -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand1 n t d canAsk p1 f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 x1 <- ask p1 (inp L.!! 1)
-                 f li x1
+      mx = 1
+      f' args = do let x0 = fromMaybe mempty $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   res <- f x0 x1
+                   return (res, L.drop (mx+1) args)
 
 -- |Creates a command with two parameters.
 makeCommand2 :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second perameter.
-             -> (Text -> a -> b -> m z)
-             -> Command m z
-makeCommand2 n t d p1 p2 f =
-   Command n t d (Just 2) (\inp -> checkParams n inp 2 2 c)
+             -> Asker m b -- ^'Asker' for the second parameter.
+             -> (Text -> a -> b -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand2 n t d canAsk p1 p2 f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 x1 <- ask p1 (inp L.!! 1)
-                 x2 <- ask p2 (inp L.!! 2)
-                 f li x1 x2
+      mx = 2
+      f' args = do let x0 = fromMaybe mempty $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   res <- f x0 x1 x2
+                   return (res, L.drop (mx+1) args)
 
 -- |Creates a command with three parameters.
 makeCommand3 :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second perameter.
+             -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
-             -> (Text -> a -> b -> c -> m z)
-             -> Command m z
-makeCommand3 n t d p1 p2 p3 f =
-   Command n t d (Just 3) (\inp -> checkParams n inp 3 3 c)
+             -> (Text -> a -> b -> c -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand3 n t d canAsk p1 p2 p3 f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 x1 <- ask p1 (inp L.!! 1)
-                 x2 <- ask p2 (inp L.!! 2)
-                 x3 <- ask p3 (inp L.!! 3)
-                 f li x1 x2 x3
+      mx = 3
+      f' args = do let x0 = fromMaybe "" $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   x3 <- askC canAsk p3 args mx 3
+                   res <- f x0 x1 x2 x3
+                   return (res, L.drop (mx+1) args)
 
 -- |Creates a command with four parameters.
 makeCommand4 :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second perameter.
+             -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
              -> Asker m d -- ^'Asker' for the fourth parameter.
-             -> (Text -> a -> b -> c -> d -> m z)
-             -> Command m z
-makeCommand4 n t d p1 p2 p3 p4 f =
-   Command n t d (Just 4) (\inp -> checkParams n inp 4 4 c)
+             -> (Text -> a -> b -> c -> d -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand4 n t d canAsk p1 p2 p3 p4 f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 x1 <- ask p1 (inp L.!! 1)
-                 x2 <- ask p2 (inp L.!! 2)
-                 x3 <- ask p3 (inp L.!! 3)
-                 x4 <- ask p4 (inp L.!! 4)
-                 f li x1 x2 x3 x4
+      mx = 4
+      f' args = do let x0 = fromMaybe "" $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   x3 <- askC canAsk p3 args mx 3
+                   x4 <- askC canAsk p4 args mx 4
+                   res <- f x0 x1 x2 x3 x4
+                   return (res, L.drop (mx+1) args)
 
 -- |Creates a command with five parameters.
 makeCommand5 :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second perameter.
+             -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
              -> Asker m d -- ^'Asker' for the fourth parameter.
              -> Asker m e -- ^'Asker' for the fifth parameter.
-             -> (Text -> a -> b -> c -> d -> e -> m z)
-             -> Command m z
-makeCommand5 n t d p1 p2 p3 p4 p5 f =
-   Command n t d (Just 4) (\inp -> checkParams n inp 5 5 c)
+             -> (Text -> a -> b -> c -> d -> e -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand5 n t d canAsk p1 p2 p3 p4 p5 f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 x1 <- ask p1 (inp L.!! 1)
-                 x2 <- ask p2 (inp L.!! 2)
-                 x3 <- ask p3 (inp L.!! 3)
-                 x4 <- ask p4 (inp L.!! 4)
-                 x5 <- ask p5 (inp L.!! 5)
-                 f li x1 x2 x3 x4 x5
+      mx = 5
+      f' args = do let x0 = fromMaybe "" $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   x3 <- askC canAsk p3 args mx 3
+                   x4 <- askC canAsk p4 args mx 4
+                   x5 <- askC canAsk p5 args mx 5
+                   res <- f x0 x1 x2 x3 x4 x5
+                   return (res, L.drop (mx+1) args)
 
--- |Creates a command with four parameters.
+-- |Creates a command with six parameters.
 makeCommand6 :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second perameter.
+             -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
              -> Asker m d -- ^'Asker' for the fourth parameter.
              -> Asker m e -- ^'Asker' for the fifth parameter.
              -> Asker m f -- ^'Asker' for the sixth parameter.
-             -> (Text -> a -> b -> c -> d -> e -> f -> m z)
-             -> Command m z
-makeCommand6 n t d p1 p2 p3 p4 p5 p6 f =
-   Command n t d (Just 4) (\inp -> checkParams n inp 6 6 c)
+             -> (Text -> a -> b -> c -> d -> e -> f -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand6 n t d canAsk p1 p2 p3 p4 p5 p6 f = Command n t d f'
    where
-      c inp = do let li = maybe "" id (L.head inp)
-                 x1 <- ask p1 (inp L.!! 1)
-                 x2 <- ask p2 (inp L.!! 2)
-                 x3 <- ask p3 (inp L.!! 3)
-                 x4 <- ask p4 (inp L.!! 4)
-                 x5 <- ask p5 (inp L.!! 5)
-                 x6 <- ask p6 (inp L.!! 6)
-                 f li x1 x2 x3 x4 x5 x6
+      mx = 6
+      f' args = do let x0 = fromMaybe mempty $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   x3 <- askC canAsk p3 args mx 3
+                   x4 <- askC canAsk p4 args mx 4
+                   x5 <- askC canAsk p5 args mx 5
+                   x6 <- askC canAsk p6 args mx 6
+                   res <- f x0 x1 x2 x3 x4 x5 x6
+                   return (res, L.drop (mx+1) args)
+
+-- |Creates a command with seven parameters.
+makeCommand7 :: (MonadIO m, MonadCatch m, Functor m)
+             => Text -- ^Command name.
+             -> (Text -> Bool) -- ^Command test.
+             -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
+             -> Asker m a -- ^'Asker' for the first parameter.
+             -> Asker m b -- ^'Asker' for the second parameter.
+             -> Asker m c -- ^'Asker' for the third parameter.
+             -> Asker m d -- ^'Asker' for the fourth parameter.
+             -> Asker m e -- ^'Asker' for the fifth parameter.
+             -> Asker m f -- ^'Asker' for the sixth parameter.
+             -> Asker m g -- ^'Asker' for the seventh parameter.
+             -> (Text -> a -> b -> c -> d -> e -> f -> g -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand7 n t d canAsk p1 p2 p3 p4 p5 p6 p7 f = Command n t d f'
+   where
+      mx = 7
+      f' args = do let x0 = fromMaybe "" $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   x3 <- askC canAsk p3 args mx 3
+                   x4 <- askC canAsk p4 args mx 4
+                   x5 <- askC canAsk p5 args mx 5
+                   x6 <- askC canAsk p6 args mx 6
+                   x7 <- askC canAsk p7 args mx 7
+                   res <- f x0 x1 x2 x3 x4 x5 x6 x7
+                   return (res, L.drop (mx+1) args)
+
+-- |Creates a command with eight parameters.
+makeCommand8 :: (MonadIO m, MonadCatch m, Functor m)
+             => Text -- ^Command name.
+             -> (Text -> Bool) -- ^Command test.
+             -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input.
+             -> Asker m a -- ^'Asker' for the first parameter.
+             -> Asker m b -- ^'Asker' for the second parameter.
+             -> Asker m c -- ^'Asker' for the third parameter.
+             -> Asker m d -- ^'Asker' for the fourth parameter.
+             -> Asker m e -- ^'Asker' for the fifth parameter.
+             -> Asker m f -- ^'Asker' for the sixth parameter.
+             -> Asker m g -- ^'Asker' for the seventh parameter.
+             -> Asker m h -- ^'Asker' for the eighth parameter.
+             -> (Text -> a -> b -> c -> d -> e -> f -> g -> h -> m z) -- ^Command function.
+             -> Command m Text z
+makeCommand8 n t d canAsk p1 p2 p3 p4 p5 p6 p7 p8 f = Command n t d f'
+   where
+      mx = 8
+      f' args = do let x0 = fromMaybe "" $ L.head args
+                   x1 <- askC canAsk p1 args mx 1
+                   x2 <- askC canAsk p2 args mx 2
+                   x3 <- askC canAsk p3 args mx 3
+                   x4 <- askC canAsk p4 args mx 4
+                   x5 <- askC canAsk p5 args mx 5
+                   x6 <- askC canAsk p6 args mx 6
+                   x7 <- askC canAsk p7 args mx 7
+                   x8 <- askC canAsk p8 args mx 8
+                   res <- f x0 x1 x2 x3 x4 x5 x6 x7 x8
+                   return (res, L.drop (mx+1) args)
+
 
 -- |Creates a command with a list of parameters.
 --  The first list @necc@ of 'Asker's indicates the necessary parameters;
@@ -354,22 +505,25 @@ makeCommandN :: (MonadIO m, MonadCatch m, Functor m)
              => Text -- ^Command name.
              -> (Text -> Bool) -- ^Command test.
              -> Text -- ^Command description
+             -> Bool -- ^Whether the command can ask for input. This only
+                     --  affects the necessary parameters.
              -> [Asker m a] -- ^'Asker's for the necessary parameters.
              -> [Asker m a] -- ^'Asker's for the optional parameters.
              -> (Text -> [a] -> m z)
-             -> Command m z
-makeCommandN n t d necc opt f = Command n t d Nothing (\inp -> checkParams n inp min max c)
+             -> Command m Text z
+makeCommandN n t d canAsk necc opt f = Command n t d f'
    where
       min = P.length necc
       max = natLength necc + natLength opt
 
-      c inp = do let li = maybe "" id (L.head inp)
-                 neccParams <- unfoldrM (comb inp) (necc,1, Nothing)
-                 let from = L.length neccParams + 1
-                     to = Just $ L.length inp - 1
-
-                 optParams <- unfoldrM (comb inp) (opt, from, to)
-                 f li (neccParams L.++ optParams)
+      f' args = do neccParams <- unfoldrM (comb args) (necc,1, Nothing)
+                   let x0 = maybe "" id (L.head args)
+                       from = L.length neccParams + 1
+                       to = Just $ L.length args - 1
+                   optParams <- unfoldrM (comb args) (opt, from, to)
+                   let params = neccParams L.++ optParams
+                   res <- f x0 params
+                   return (res, L.drop (length params + 1) args)
 
       -- |Goes through the list of askers until all are done or until the first
       --  AskFailure occurs. The results are of type @Either (AskFailure e) z@,
@@ -378,33 +532,16 @@ makeCommandN n t d necc opt f = Command n t d Nothing (\inp -> checkParams n inp
       comb _ ([],_,_) = return Nothing
       comb inp (x:xs, i, j) =
          if isJust j && fromJust j < i then return Nothing
-         else ask x (inp L.!! i) >$> args xs >$> Just
+         else askC canAsk x inp min i >$> args xs >$> Just
 
          where args ys y = (y,(ys,i+1,j))
 
--- |Takes an input and tries to run it against a list of commands,
---  trying the out in sequence. The first command whose 'commandTest'
---  returns True is executed. If none of the commands match,
---  @NothingFoundFailure@ is thrown.
-commandDispatch :: (MonadIO m, MonadCatch m, Functor m)
-                => Text -- ^The user's input.
-                -> [Command m z] -- ^The command library.
-                -> m z
-commandDispatch input cs =
-   case readArgs input of
-      Left l -> throwM (ParamFailure l)
-      Right input' -> if noMatch input'
-                      then throwM NothingFoundFailure
-                      else do runCommand (fromJust $ first input') input
-   where
-      noMatch = isNothing . first
-      firstArg = maybe "" id . L.head
-      first r = L.head $ P.dropWhile (not . flip commandTest (firstArg r)) cs
-
+      askC True f xs _ i = ask f (xs L.!! i)
+      askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
 
 -- |Prints out a list of command names, with their descriptions.
 summarizeCommands :: MonadIO m
-                  => [Command m2 z]
+                  => [Command m2 i z]
                   -> m ()
 summarizeCommands [] = return ()
 summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
@@ -419,3 +556,45 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
       prDesc = putStrLn . (" - " ++) . commandDesc
 
       padRight c i cs = cs ++ replicate (i - length cs) c
+
+askC :: (MonadIO m, MonadCatch m, Functor m)
+     => Bool -> Asker m a -> [Text] -> Int -> Int -> m a
+askC True f xs _ i = ask f (xs L.!! i)
+askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
+
+
+-- |Runs a REPL based on a set of commands.
+--  For a line of input, the commands are tried in following order:
+--
+--  * the "exit" command,
+--  * all regular commands, and then
+--  * the "unknown" command.
+makeREPL :: (Functor m, MonadIO m, MonadCatch m, Functor f, Foldable f)
+         => [Command m Text a]
+            -- ^The regular commands.
+         -> Command m Text b
+            -- ^The "exit" command which terminates the loop.
+         -> Command m Text c
+            -- ^The command that is called when none of the others match.
+            --  This one's 'commandTest' is replaced with @const True@.
+         -> m Text
+            -- ^The asker to execute before each command (i.e. the prompt).
+         -> f (Handler m ())
+            -- ^Handlers for any exceptions that may arise. Generally, you
+            --  will want to handle at least the exceptions of this module
+            --  ('SomeCommandError', 'MalformedParamsError', 'TooManyParamsError',
+            --   'TooFewParamsError'), and whatever the 'Asker' can throw.
+         -> m ()
+            -- ^Asks the user repeatedly for input, until the input matches
+            --  the command test of the "exit" command.
+makeREPL regular exit unknown prompt handlers = void $ iterateUntil id iter
+   where
+      iter = (prompt >>= runSingleCommand allCommands)
+             `catches` handlers'
+
+      handlers' = fmap (\(Handler f) -> Handler (\e -> f e >> return False)) handlers
+      exit' = fmap (const True) exit
+      regular' = L.map (fmap (const False)) regular
+      unknown' = fmap (const False) $ unknown{commandTest = const True}
+
+      allCommands = oneOf "" "" (exit' : regular' ++ [unknown'])
