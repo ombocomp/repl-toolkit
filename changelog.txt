@@ -1,3 +1,7 @@
+0.5 Replaced system-filepath with filepath, as system-filepath has become deprecated. This is a minor, but breaking, change.
+
+0.4 Completely overhauled the command system. It is now possible to chain commands together and make subcommands.
+
 0.3.1 Added functionality for reading configuration files.
 
 0.3 Ditched MonadError in favour of MonadThrow. This should make the functions much easier to use.

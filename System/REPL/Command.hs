@@ -4,42 +4,53 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
 
--- |Provides Commands for REPLs. Commands take care of input
---  and parameter-handling, and allow parameters to be supplied
---  in the same line as the command's name (e.g. ":cmd param1 param2" on stdin).
---  Provided parameters can be parsed and checked (say, against databases)
---  before they are passed to the actual command function.
---  They are relatively large units of abstraction, but they allow the easy
---  creation of relatively sophisticated command loops, and have the advantage
---  that one doesn't need to fiddle around with input handling in the middle
---  of the actual command code.
+-- |Provides Commands for REPLs. Commands are there to provide high-level
+--  handling of user input and to offer functionality in a standard, composable
+--  way.
+--
+--  Use cases:
+--
+--  1. Asking the user for input that has to be of the right format or fulfil
+--     specific constraints, such as asking for an @Int@ between 0 and 10, or
+--     asking for a username that has to exist in some database.
+--  2. Creating command hierarchies, e.g.
+--
+--     >>> myVersionControl commit "my first commit" only-binaries
+--
+--     In this example, we could have @commit@ as a root command that
+--     consumes the commit name "my first commit" and hands over to
+--     the sub-command @only-binaries@.
+--
+--  3. Creating a REPL out of individual commands. Let us say that we have
+--     a version control system with @commit, revert, diff@ commands, plus
+--     an exit command like "exit", and one that prints some
+--     "command not recognized" message if the user's input doesn't match
+--     any commands. We can compose these commands with 'makeREPL', providing
+--     robust command selection and obviating the need for manually writing the
+--     input handling loop.
+--
+--  Commands can take their input in one line, e.g.
+--
+-- >>>:cmd param1 "param2 with spaces" param3
+--
+--  or they can ask for missing parameters if so configured:
+--
+-- >>>:cmd param1 "param2 with spaces"
+-- Please enter param3:
 module System.REPL.Command (
    -- *Command class
-   -- |Using the 'Command' class is not necessary, but it makes dealing with
-   --  user input considerably easier. When a command is run with a line of
-   --  input, it automatically segments it by whitespace, tries to interpret
-   --  each part as one of its arguments and passes them to the actual command
-   --  function. If any arguments haven't been supplies, it asks for them on
-   --  stdin. If too many arguments have been supplied, or if any argument'
-   --  parsing returns an error, the command is aborted.
-   --
-   --  Example:
-   --
-   --  > cd = makeCommand1 ...
-   --
-   --  >>> :cd ../
-   --  Directory changed!
-   --  >>> :cd
-   --  Enter new directory:
-   --  >>> ../
-   --  Directory changed!
    Command(..),
    runCommand,
    runSingleCommand,
    oneOf,
    subcommand,
    makeREPL,
-   -- * Exceptions
+   -- *Exceptions
+   -- |These are the exceptions that can be thrown during the course of command
+   --  invocation (in addition to those that you throw yourself, of course).
+   --
+   --  SomeCommandError is an abstract exception and all others are its concrete
+   --  subclasses. See the example in "Control.Exception" for details.
    SomeCommandError(..),
    MalformedParamsError(..),
    TooFewParamsError(..),
@@ -50,7 +61,7 @@ module System.REPL.Command (
    quoteArg,
    -- * Helpers
    summarizeCommands,
-   -- * Making commands.
+   -- * Making commands
    makeCommand,
    makeCommand1,
    makeCommand2,
@@ -108,9 +119,9 @@ commandErrorUpcast = toException . SomeCommandError
 commandErrorDowncast :: (Exception a) => SomeException -> Maybe a
 commandErrorDowncast x = do {SomeCommandError y <- fromException x; cast y}
 
-   -- |The input of a command was malformed and could not interpreted. I.e.
-   --  the input contained inadmissible characters, or quotes were mismatched.
-   --  The 'Text' argument contains the parser error.
+-- |The input of a command was malformed and could not interpreted. I.e.
+--  the input contained inadmissible characters, or quotes were mismatched.
+--  The 'Text' argument contains the parser error.
 data MalformedParamsError = MalformedParamsError Text deriving (Show, Eq, Typeable, Ord)
 instance Exception MalformedParamsError where
    toException = commandErrorUpcast
@@ -145,11 +156,6 @@ data Command m i a = Command{
                      commandTest :: i -> Bool,
                      -- |A description of the command.
                      commandDesc :: Text,
-                     -- |Indicates whether the command should run IO actions
-                     --  to get needed input.
-                     --canAsk :: Bool,
-                     -- |The minium and maximum number of parameters.
-                     --numParameters :: (Int, Maybe Int),
                      -- |Runs the command with the input text as parameter,
                      --  returning the unconsumed input.
                      runPartialCommand :: [i] -> m (a, [i])}

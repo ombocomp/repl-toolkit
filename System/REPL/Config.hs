@@ -10,7 +10,6 @@ module System.REPL.Config (
    ) where
 
 import Prelude hiding ((++), FilePath)
-import qualified Prelude as Pr
 
 import Control.Monad.Catch
 import Control.Monad.IO.Class
@@ -18,11 +17,10 @@ import Data.Aeson
 import qualified Data.ByteString.Lazy as BL
 import Data.Default
 import Data.Functor.Monadic
-import Data.ListLike (ListLike(append), StringLike(fromString))
 import Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.Text.Lazy as T
 import Data.Typeable
-import qualified Filesystem.Path.CurrentOS as Fp
+import qualified System.FilePath as Fp
 import System.Directory
 import Text.Read (readMaybe)
 
@@ -33,7 +31,7 @@ instance Exception NoParseError
 
 -- |Creates a NoParseError out of a 'Fp.FilePath'.
 noParseError :: Fp.FilePath -> NoParseError
-noParseError = NoParseError . T.pack  .  Fp.encodeString
+noParseError = NoParseError . T.pack
 
 -- |Variant of 'readConfigFile' that uses 'Show' and 'Read' for (de)serialization.
 --
@@ -79,10 +77,9 @@ readConfigFile :: forall e m a.
                   --  using this function.
                -> m a
 readConfigFile path parser writer = do
-   let pathT = Fp.encodeString path
-   liftIO $ createDirectoryIfMissing True $ Fp.encodeString $ Fp.parent path
-   exists <- liftIO $ doesFileExist $ Fp.encodeString path
-   content <- if not exists then do liftIO $ BL.writeFile pathT (writer (def :: a))
+   liftIO $ createDirectoryIfMissing True $ Fp.takeDirectory path
+   exists <- liftIO $ doesFileExist path
+   content <- if not exists then do liftIO $ BL.writeFile path (writer (def :: a))
                                     return $ Right def
-              else liftIO (BL.readFile pathT) >$> parser
+              else liftIO (BL.readFile path) >$> parser
    either throwM return content
