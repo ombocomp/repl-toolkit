@@ -194,7 +194,7 @@ instance Read Verbatim where
 -- |Creates a general 'Asker' with a custom parsing function and a predicate
 --  that the parsed value has to pass. If either the parsing or the predicate
 --  fail, one of the given error messages is displayed.
-askerP :: (Monad m, Functor m)
+askerP :: (Monad m)
        => PromptMsg
        -> (a -> PredicateErrorMsg)
        -> Parser a
@@ -206,7 +206,7 @@ askerP pr errP parse pred = Asker pr parse check
                                   False -> Left $ errP x)
 
 -- |Creates an 'Asker' which only cares about the type of the input.
-typeAskerP :: (Monad m, Functor m)
+typeAskerP :: (Monad m)
             => PromptMsg
             -> Parser a
             -> Asker m a
@@ -216,7 +216,7 @@ typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.ty
 --  is entered (according to 'Data.Char.isSpace'), it returns 'Nothing'
 --  without further parsing or checking; otherwise, it behaves identically
 --  to 'asker'.
-maybeAskerP :: (Monad m, Functor m)
+maybeAskerP :: (Monad m)
            => PromptMsg
            -> (a -> PredicateErrorMsg)
            -> Parser a
@@ -248,7 +248,7 @@ readParser errT t = maybe (Left $ errT t) Right . readMaybe . T.unpack $ t
 --  1. The user input is unpacked into a String and then parsed. This can
 --     incur a performance hit for large inputs.
 --  2. A Read-instance must be available for the expected type.
-asker :: (Monad m, Functor m, Read a)
+asker :: (Monad m, Read a)
       => PromptMsg
       -> (T.Text -> TypeErrorMsg)
       -> (a -> PredicateErrorMsg)
@@ -257,7 +257,7 @@ asker :: (Monad m, Functor m, Read a)
 asker pr errT errP pred = askerP pr errP (readParser errT) pred
 
 -- |Creates an 'Asker' based on Read which just cares about the type of the input.
-typeAsker :: (Monad m, Functor m, Read a)
+typeAsker :: (Monad m, Read a)
           => PromptMsg
           -> (T.Text -> TypeErrorMsg)
           -> Asker m a
@@ -265,7 +265,7 @@ typeAsker p errT = asker p errT (error "LIBRARY BUG: undefined in System.REPL.ty
 
 -- |Creates an 'Asker' which takes its input verbatim as 'Text'. The input
 --  thus only has to pass a predicate, not any parsing.
-predAsker :: (Monad m, Functor m)
+predAsker :: (Monad m)
           => PromptMsg
           -> (T.Text -> PredicateErrorMsg)
           -> Predicate m T.Text
@@ -274,7 +274,7 @@ predAsker p errP f =
    asker p (error "LIBRARY BUG: undefined in System.REPL.predAsker") (errP . fromVerbatim) (f . fromVerbatim)
 
 -- |An asker based on Read which asks for an optional value.
-maybeAsker :: (Monad m, Functor m, Read a)
+maybeAsker :: (Monad m, Read a)
            => PromptMsg
            -> (T.Text -> TypeErrorMsg)
            -> (a -> PredicateErrorMsg)
@@ -286,7 +286,7 @@ maybeAsker pr errT errP pred = maybeAskerP pr errP (readParser errT) pred
 --------------------------------------------------------------------------------
 
 -- |Executes an Asker. If the process fails, an exception is thrown.
-ask :: (MonadIO m, MonadCatch m, Functor m)
+ask :: (MonadIO m, MonadCatch m)
     => Asker m a
     -> Maybe T.Text
     -> m a
@@ -297,14 +297,14 @@ ask a v = askEither a v >>= either throwM return
 -- @
 -- ask' a = ask a Nothing
 -- @
-ask' :: (MonadIO m, MonadCatch m, Functor m)
+ask' :: (MonadIO m, MonadCatch m)
      => Asker m a
      -> m a
 ask' a = ask a Nothing
 
 -- |Executes an 'Asker'. If the Text argument is Nothing, the user is asked
 --  to enter a line on stdin. If it is @Just x@, @x@ is taken to be input.
-askEither :: (MonadIO m, MonadCatch m, Functor m)
+askEither :: (MonadIO m, MonadCatch m)
           => Asker m a
           -> Maybe T.Text
           -> m (Either AskFailure a)
@@ -320,7 +320,7 @@ askEither a = maybe getInput check
 
 -- |Repeatedly executes an ask action until the user enters a valid value.
 --  Error messages are printed each time.
-untilValid :: forall m a.(MonadIO m, MonadCatch m, Functor m, Read a)
+untilValid :: forall m a.(MonadIO m, MonadCatch m, Read a)
            => m a
            -> m a
 untilValid m = m `catch` handler

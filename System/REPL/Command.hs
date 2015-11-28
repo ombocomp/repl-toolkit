@@ -160,7 +160,7 @@ data Command m i a = Command{
 instance Functor m => Functor (Command m i) where
    fmap f c@Command{runPartialCommand=run} = c{runPartialCommand=(fmap (first f)  . run)}
 
-instance (Functor m, Monad m) => Ap.Apply (Command m i) where
+instance (Monad m) => Ap.Apply (Command m i) where
    -- |Runs the first command, then the second with the left-over input.
    --  The result of the first command is applied to that of the second.
    --
@@ -173,7 +173,7 @@ instance (Functor m, Monad m) => Ap.Apply (Command m i) where
                       return (func arg, output')
 
 
-instance (Functor m, Monad m) => Bi.Bind (Command m i) where
+instance (Monad m) => Bi.Bind (Command m i) where
    -- |The same as 'Ap.<.>', but the second argument can read the result of the
    --  first.
    f >>- g = f{runPartialCommand = h}
@@ -184,12 +184,12 @@ instance (Functor m, Monad m) => Bi.Bind (Command m i) where
 
 -- |Runs the command with the input text as parameter, discarding any left-over
 --  input.
-runCommand :: (Functor m, Monad m, MonadThrow m) => Command m T.Text a -> T.Text -> m a
+runCommand :: (Monad m, MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runCommand c = fmap fst . runPartialCommand c <=< readArgs
 
 -- |Runs the command with the input text as parameter. If any input is left
 --  unconsumed, an error is thrown.
-runSingleCommand :: (MonadThrow m, Functor m) => Command m T.Text a -> T.Text -> m a
+runSingleCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runSingleCommand c t = do
    t' <- readArgs t
    (res, output) <- runPartialCommand c t'
@@ -225,7 +225,7 @@ oneOf n d xs = Command n test d cmd
 --  some input unconsumed). Ignoring all the required parameters for a moment,
 --
 --  > subcommand x xs = x >>- oneOf xs
-subcommand :: (Functor m, Monad m, Monoid i)
+subcommand :: (Monad m, Monoid i)
            => Command m i a
               -- ^The root command.
            -> [a -> Command m i b]
@@ -237,7 +237,7 @@ subcommand x xs = x Bi.>>- \y -> oneOf "" "" (L.map ($ y) xs)
 -- |Splits and trims the input of a command. If the input cannot be parsed, a
 --  'MalformedCommand' exception is thrown.
 --
---  -- * Format
+--  -- *Format
 --
 --  Any non-whitespace sequence of characters is interpreted as
 --  one argument, unless double quotes (") are used, in which case
@@ -272,7 +272,7 @@ readArgs = either err return . P.parse parser "" . T.unpack
 
 -- |Gets the first part of a command string, or the empty string, if the comand
 --  string is empty.
-getName :: (Functor m, MonadThrow m) => T.Text -> m T.Text
+getName :: (MonadThrow m) => T.Text -> m T.Text
 getName = fromMaybe mempty . L.head <$=< readArgs
 
 -- |Surrounds an argument in quote marks, if necessary.
@@ -285,8 +285,7 @@ quoteArg x = if T.null x || T.any isSpace x then '\"' `T.cons` x `T.snoc` '\"'
 
 
 -- |Creates a command without parameters.
-makeCommand :: (MonadIO m, MonadCatch m,
-                Functor m, Monoid i)
+makeCommand :: (MonadIO m, MonadCatch m, Monoid i)
             => T.Text -- ^Command name.
             -> (i -> Bool) -- ^Command test.
             -> T.Text -- ^Command description.
@@ -302,7 +301,7 @@ makeCommand n t d f = Command n t d f'
 
 
 -- |Creates a command with one parameter.
-makeCommand1 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand1 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -322,7 +321,7 @@ makeCommand1 n t d canAsk p1 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with two parameters.
-makeCommand2 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand2 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -341,7 +340,7 @@ makeCommand2 n t d canAsk p1 p2 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with three parameters.
-makeCommand3 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand3 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -362,7 +361,7 @@ makeCommand3 n t d canAsk p1 p2 p3 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with four parameters.
-makeCommand4 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand4 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -385,7 +384,7 @@ makeCommand4 n t d canAsk p1 p2 p3 p4 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with five parameters.
-makeCommand5 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand5 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -410,7 +409,7 @@ makeCommand5 n t d canAsk p1 p2 p3 p4 p5 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with six parameters.
-makeCommand6 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand6 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -437,7 +436,7 @@ makeCommand6 n t d canAsk p1 p2 p3 p4 p5 p6 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with seven parameters.
-makeCommand7 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand7 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -466,7 +465,7 @@ makeCommand7 n t d canAsk p1 p2 p3 p4 p5 p6 p7 f = Command n t d f'
                    return (res, L.drop (mx+1) args)
 
 -- |Creates a command with eight parameters.
-makeCommand8 :: (MonadIO m, MonadCatch m, Functor m)
+makeCommand8 :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -504,7 +503,7 @@ makeCommand8 n t d canAsk p1 p2 p3 p4 p5 p6 p7 p8 f = Command n t d f'
 --  If the number of passed parameters exceeds
 --  @length necc + length opt@, or if any 'Asker' fails,
 --  the command returns an 'AskFailure'.
-makeCommandN :: (MonadIO m, MonadCatch m, Functor m)
+makeCommandN :: (MonadIO m, MonadCatch m)
              => T.Text -- ^Command name.
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
@@ -560,7 +559,7 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
 
       padRight c i cs = cs ++ replicate (i - length cs) c
 
-askC :: (MonadIO m, MonadCatch m, Functor m)
+askC :: (MonadIO m, MonadCatch m)
      => Bool -> Asker m a -> [T.Text] -> Int -> Int -> m a
 askC True f xs _ i = ask f (xs L.!! i)
 askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
@@ -572,7 +571,7 @@ askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask 
 --  * the "exit" command,
 --  * all regular commands, and then
 --  * the "unknown" command.
-makeREPL :: (Functor m, MonadIO m, MonadCatch m, Functor f, Foldable f)
+makeREPL :: (MonadIO m, MonadCatch m, Functor f, Foldable f)
          => [Command m T.Text a]
             -- ^The regular commands.
          -> Command m T.Text b
@@ -583,8 +582,8 @@ makeREPL :: (Functor m, MonadIO m, MonadCatch m, Functor f, Foldable f)
          -> m T.Text
             -- ^The asker to execute before each command (i.e. the prompt).
          -> f (Handler m ())
-            -- ^Handlers for any exceptions that may arise. Generally, you
-            --  will want to handle at least the exceptions of this module
+            -- ^Collection (e.g. list) of Handlers for any exceptions that may arise.
+            --  Generally, you will want to handle at least the exceptions of this module
             --  ('SomeCommandError', 'MalformedParamsError', 'TooManyParamsError',
             --   'TooFewParamsError'), and whatever the 'Asker' can throw.
          -> m ()
