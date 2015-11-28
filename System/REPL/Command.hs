@@ -83,7 +83,6 @@ import Control.Monad.Catch
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Loops (unfoldrM, iterateUntil)
 import Data.Char (isSpace)
-import Data.Foldable (Foldable)
 import qualified Data.Functor.Apply as Ap
 import qualified Data.Functor.Bind as Bi
 import Data.Functor.Monadic
@@ -91,7 +90,6 @@ import qualified Data.List as LU
 import qualified Data.List.Safe as L
 import Data.ListLike(ListLike(..))
 import Data.Maybe (fromJust, isJust, fromMaybe)
-import Data.Monoid (mempty, Monoid)
 import Data.Ord
 import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
