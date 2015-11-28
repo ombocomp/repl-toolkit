@@ -91,8 +91,7 @@ import qualified Data.List.Safe as L
 import Data.ListLike(ListLike(..))
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Ord
-import Data.Text.Lazy (Text)
-import qualified Data.Text.Lazy as T
+import qualified Data.Text as T
 import Data.Typeable
 import Numeric.Peano
 import System.REPL
@@ -120,7 +119,7 @@ commandErrorDowncast x = do {SomeCommandError y <- fromException x; cast y}
 -- |The input of a command was malformed and could not interpreted. I.e.
 --  the input contained inadmissible characters, or quotes were mismatched.
 --  The 'Text' argument contains the parser error.
-data MalformedParamsError = MalformedParamsError Text deriving (Show, Eq, Typeable, Ord)
+data MalformedParamsError = MalformedParamsError T.Text deriving (Show, Eq, Typeable, Ord)
 instance Exception MalformedParamsError where
    toException = commandErrorUpcast
    fromException = commandErrorDowncast
@@ -145,7 +144,7 @@ instance Exception TooFewParamsError where
 -- |A REPL command, possibly with parameters.
 data Command m i a = Command{
                      -- |The short name of the command. Purely informative.
-                     commandName :: Text,
+                     commandName :: T.Text,
                      -- |Returns whether the first part of an input
                      --  (the command name) matches
                      --  a the command. The simplest form is
@@ -153,7 +152,7 @@ data Command m i a = Command{
                      --  matchings are possible.
                      commandTest :: i -> Bool,
                      -- |A description of the command.
-                     commandDesc :: Text,
+                     commandDesc :: T.Text,
                      -- |Runs the command with the input text as parameter,
                      --  returning the unconsumed input.
                      runPartialCommand :: [i] -> m (a, [i])}
@@ -185,12 +184,12 @@ instance (Functor m, Monad m) => Bi.Bind (Command m i) where
 
 -- |Runs the command with the input text as parameter, discarding any left-over
 --  input.
-runCommand :: (Functor m, Monad m, MonadThrow m) => Command m Text a -> Text -> m a
+runCommand :: (Functor m, Monad m, MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runCommand c = fmap fst . runPartialCommand c <=< readArgs
 
 -- |Runs the command with the input text as parameter. If any input is left
 --  unconsumed, an error is thrown.
-runSingleCommand :: (MonadThrow m, Functor m) => Command m Text a -> Text -> m a
+runSingleCommand :: (MonadThrow m, Functor m) => Command m T.Text a -> T.Text -> m a
 runSingleCommand c t = do
    t' <- readArgs t
    (res, output) <- runPartialCommand c t'
@@ -208,9 +207,9 @@ runSingleCommand c t = do
 --  @head (readArgs t)@ or @mempty@ if @t@ is empty.
 --  Otherwise, the result is undefined.
 oneOf :: Monoid i
-      => Text
+      => T.Text
          -- ^Command name.
-      -> Text
+      -> T.Text
          -- ^Command description.
       -> [Command m i a]
       -> Command m i a
@@ -247,7 +246,7 @@ subcommand x xs = x Bi.>>- \y -> oneOf "" "" (L.map ($ y) xs)
 --
 --  Arguments are parsed using parsec's @stringLiteral@ (haskell-style),
 --  meaning that escape sequences and unicode characters are handled automatically.
-readArgs :: MonadThrow m => Text -> m [Text]
+readArgs :: MonadThrow m => T.Text -> m [T.Text]
 readArgs = either err return . P.parse parser "" . T.unpack
    where
       err = throwM . MalformedParamsError . T.pack . show
@@ -273,14 +272,14 @@ readArgs = either err return . P.parse parser "" . T.unpack
 
 -- |Gets the first part of a command string, or the empty string, if the comand
 --  string is empty.
-getName :: (Functor m, MonadThrow m) => Text -> m Text
+getName :: (Functor m, MonadThrow m) => T.Text -> m T.Text
 getName = fromMaybe mempty . L.head <$=< readArgs
 
 -- |Surrounds an argument in quote marks, if necessary.
 --  This is useful when arguments were extracted via 'readArgs', which deletes
 --  quote marks. Quotes are placed around the input iff it is empty or contains
 --  whitespace.
-quoteArg :: Text -> Text
+quoteArg :: T.Text -> T.Text
 quoteArg x = if T.null x || T.any isSpace x then '\"' `T.cons` x `T.snoc` '\"'
                                             else x
 
@@ -288,9 +287,9 @@ quoteArg x = if T.null x || T.any isSpace x then '\"' `T.cons` x `T.snoc` '\"'
 -- |Creates a command without parameters.
 makeCommand :: (MonadIO m, MonadCatch m,
                 Functor m, Monoid i)
-            => Text -- ^Command name.
+            => T.Text -- ^Command name.
             -> (i -> Bool) -- ^Command test.
-            -> Text -- ^Command description.
+            -> T.Text -- ^Command description.
             -> (i -> m z)
                -- ^Command function. It will receive the first part of the input
                --  (customarily the command name), or the empty string if the
@@ -304,16 +303,16 @@ makeCommand n t d f = Command n t d f'
 
 -- |Creates a command with one parameter.
 makeCommand1 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
                      -- ^If True, running the command will run the Asker's
                      --  IO action if not enough input is provided. If False
                      --  a 'ParamNumError' will be thrown.
              -> Asker m a -- ^'Asker' for the first parameter.
-             -> (Text -> a -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand1 n t d canAsk p1 f = Command n t d f'
    where
       mx = 1
@@ -324,14 +323,14 @@ makeCommand1 n t d canAsk p1 f = Command n t d f'
 
 -- |Creates a command with two parameters.
 makeCommand2 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
-             -> (Text -> a -> b -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand2 n t d canAsk p1 p2 f = Command n t d f'
    where
       mx = 2
@@ -343,15 +342,15 @@ makeCommand2 n t d canAsk p1 p2 f = Command n t d f'
 
 -- |Creates a command with three parameters.
 makeCommand3 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
-             -> (Text -> a -> b -> c -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> c -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand3 n t d canAsk p1 p2 p3 f = Command n t d f'
    where
       mx = 3
@@ -364,16 +363,16 @@ makeCommand3 n t d canAsk p1 p2 p3 f = Command n t d f'
 
 -- |Creates a command with four parameters.
 makeCommand4 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
              -> Asker m d -- ^'Asker' for the fourth parameter.
-             -> (Text -> a -> b -> c -> d -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> c -> d -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand4 n t d canAsk p1 p2 p3 p4 f = Command n t d f'
    where
       mx = 4
@@ -387,17 +386,17 @@ makeCommand4 n t d canAsk p1 p2 p3 p4 f = Command n t d f'
 
 -- |Creates a command with five parameters.
 makeCommand5 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
              -> Asker m c -- ^'Asker' for the third parameter.
              -> Asker m d -- ^'Asker' for the fourth parameter.
              -> Asker m e -- ^'Asker' for the fifth parameter.
-             -> (Text -> a -> b -> c -> d -> e -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> c -> d -> e -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand5 n t d canAsk p1 p2 p3 p4 p5 f = Command n t d f'
    where
       mx = 5
@@ -412,9 +411,9 @@ makeCommand5 n t d canAsk p1 p2 p3 p4 p5 f = Command n t d f'
 
 -- |Creates a command with six parameters.
 makeCommand6 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
@@ -422,8 +421,8 @@ makeCommand6 :: (MonadIO m, MonadCatch m, Functor m)
              -> Asker m d -- ^'Asker' for the fourth parameter.
              -> Asker m e -- ^'Asker' for the fifth parameter.
              -> Asker m f -- ^'Asker' for the sixth parameter.
-             -> (Text -> a -> b -> c -> d -> e -> f -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> c -> d -> e -> f -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand6 n t d canAsk p1 p2 p3 p4 p5 p6 f = Command n t d f'
    where
       mx = 6
@@ -439,9 +438,9 @@ makeCommand6 n t d canAsk p1 p2 p3 p4 p5 p6 f = Command n t d f'
 
 -- |Creates a command with seven parameters.
 makeCommand7 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
@@ -450,8 +449,8 @@ makeCommand7 :: (MonadIO m, MonadCatch m, Functor m)
              -> Asker m e -- ^'Asker' for the fifth parameter.
              -> Asker m f -- ^'Asker' for the sixth parameter.
              -> Asker m g -- ^'Asker' for the seventh parameter.
-             -> (Text -> a -> b -> c -> d -> e -> f -> g -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> c -> d -> e -> f -> g -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand7 n t d canAsk p1 p2 p3 p4 p5 p6 p7 f = Command n t d f'
    where
       mx = 7
@@ -468,9 +467,9 @@ makeCommand7 n t d canAsk p1 p2 p3 p4 p5 p6 p7 f = Command n t d f'
 
 -- |Creates a command with eight parameters.
 makeCommand8 :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
              -> Asker m a -- ^'Asker' for the first parameter.
              -> Asker m b -- ^'Asker' for the second parameter.
@@ -480,8 +479,8 @@ makeCommand8 :: (MonadIO m, MonadCatch m, Functor m)
              -> Asker m f -- ^'Asker' for the sixth parameter.
              -> Asker m g -- ^'Asker' for the seventh parameter.
              -> Asker m h -- ^'Asker' for the eighth parameter.
-             -> (Text -> a -> b -> c -> d -> e -> f -> g -> h -> m z) -- ^Command function.
-             -> Command m Text z
+             -> (T.Text -> a -> b -> c -> d -> e -> f -> g -> h -> m z) -- ^Command function.
+             -> Command m T.Text z
 makeCommand8 n t d canAsk p1 p2 p3 p4 p5 p6 p7 p8 f = Command n t d f'
    where
       mx = 8
@@ -506,15 +505,15 @@ makeCommand8 n t d canAsk p1 p2 p3 p4 p5 p6 p7 p8 f = Command n t d f'
 --  @length necc + length opt@, or if any 'Asker' fails,
 --  the command returns an 'AskFailure'.
 makeCommandN :: (MonadIO m, MonadCatch m, Functor m)
-             => Text -- ^Command name.
-             -> (Text -> Bool) -- ^Command test.
-             -> Text -- ^Command description
+             => T.Text -- ^Command name.
+             -> (T.Text -> Bool) -- ^Command test.
+             -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input. This only
                      --  affects the necessary parameters.
              -> [Asker m a] -- ^'Asker's for the necessary parameters.
              -> [Asker m a] -- ^'Asker's for the optional parameters.
-             -> (Text -> [a] -> m z)
-             -> Command m Text z
+             -> (T.Text -> [a] -> m z)
+             -> Command m T.Text z
 makeCommandN n t d canAsk necc opt f = Command n t d f'
    where
       min = P.length necc
@@ -562,7 +561,7 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
       padRight c i cs = cs ++ replicate (i - length cs) c
 
 askC :: (MonadIO m, MonadCatch m, Functor m)
-     => Bool -> Asker m a -> [Text] -> Int -> Int -> m a
+     => Bool -> Asker m a -> [T.Text] -> Int -> Int -> m a
 askC True f xs _ i = ask f (xs L.!! i)
 askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
 
@@ -574,14 +573,14 @@ askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask 
 --  * all regular commands, and then
 --  * the "unknown" command.
 makeREPL :: (Functor m, MonadIO m, MonadCatch m, Functor f, Foldable f)
-         => [Command m Text a]
+         => [Command m T.Text a]
             -- ^The regular commands.
-         -> Command m Text b
+         -> Command m T.Text b
             -- ^The "exit" command which terminates the loop.
-         -> Command m Text c
+         -> Command m T.Text c
             -- ^The command that is called when none of the others match.
             --  This one's 'commandTest' is replaced with @const True@.
-         -> m Text
+         -> m T.Text
             -- ^The asker to execute before each command (i.e. the prompt).
          -> f (Handler m ())
             -- ^Handlers for any exceptions that may arise. Generally, you
