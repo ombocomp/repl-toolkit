@@ -197,21 +197,21 @@ instance Read Verbatim where
 --  fail, one of the given error messages is displayed.
 askerP :: (Monad m, Functor m)
        => PromptMsg
-       -> PredicateErrorMsg
+       -> (a -> PredicateErrorMsg)
        -> Parser a
        -> Predicate m a
        -> Asker m a
 askerP pr errP parse pred = Asker pr parse check
    where
-      check = pred >=$> (\case True  -> Right ()
-                               False -> Left errP)
+      check x = pred x >$> (\case True  -> Right ()
+                                  False -> Left $ errP x)
 
 -- |Creates an 'Asker' which only cares about the type of the input.
 typeAskerP :: (Monad m, Functor m)
             => PromptMsg
             -> Parser a
             -> Asker m a
-typeAskerP pr parse = askerP pr undefined parse (const $ return True)
+typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.typeAskerP") parse (const $ return True)
 
 -- |An asker which asks for an optional value. If only whitespace
 --  is entered (according to 'Data.Char.isSpace'), it returns 'Nothing'
@@ -219,7 +219,7 @@ typeAskerP pr parse = askerP pr undefined parse (const $ return True)
 --  to 'asker'.
 maybeAskerP :: (Monad m, Functor m)
            => PromptMsg
-           -> PredicateErrorMsg
+           -> (a -> PredicateErrorMsg)
            -> Parser a
            -> Predicate m a
            -> Asker m (Maybe a)
@@ -230,7 +230,7 @@ maybeAskerP pr errP parse pred = Asker pr parse' check
 
       check Nothing = return $ Right ()
       check (Just t) = pred t >$> (\case True  -> Right ()
-                                         False -> Left errP)
+                                         False -> Left $ errP t)
 
 -- Parsers based on Read
 -------------------------------------------------------------------------------
@@ -238,10 +238,9 @@ maybeAskerP pr errP parse pred = Asker pr parse' check
 -- |A parser based on 'Text.Read.readMaybe'. This suffices for the parsing of
 --  most data types.
 readParser :: Read a
-           => TypeErrorMsg
-           -> Text
-           -> (Either Text a)
-readParser errT = maybe (Left errT) Right . readMaybe . T.unpack
+           => (Text -> TypeErrorMsg)
+           -> Parser a
+readParser errT t = maybe (Left $ errT t) Right . readMaybe . T.unpack $ t
 
 -- |Creates a general 'Asker' with 'Text.Read.readMaybe' as its parser.
 --  Using 'Data.Read.readMaybe' is perfectly fine for most values, but it has
@@ -252,8 +251,8 @@ readParser errT = maybe (Left errT) Right . readMaybe . T.unpack
 --  2. A Read-instance must be available for the expected type.
 asker :: (Monad m, Functor m, Read a)
       => PromptMsg
-      -> TypeErrorMsg
-      -> PredicateErrorMsg
+      -> (Text -> TypeErrorMsg)
+      -> (a -> PredicateErrorMsg)
       -> Predicate m a
       -> Asker m a
 asker pr errT errP pred = askerP pr errP (readParser errT) pred
@@ -261,25 +260,25 @@ asker pr errT errP pred = askerP pr errP (readParser errT) pred
 -- |Creates an 'Asker' based on Read which just cares about the type of the input.
 typeAsker :: (Monad m, Functor m, Read a)
           => PromptMsg
-          -> TypeErrorMsg
+          -> (Text -> TypeErrorMsg)
           -> Asker m a
-typeAsker p errT = asker p errT undefined (const $ return True)
+typeAsker p errT = asker p errT (error "LIBRARY BUG: undefined in System.REPL.typeAsker") (const $ return True)
 
 -- |Creates an 'Asker' which takes its input verbatim as 'Text'. The input
 --  thus only has to pass a predicate, not any parsing.
 predAsker :: (Monad m, Functor m)
           => PromptMsg
-          -> Text -- ^Predicate error message.
-          -> (Text -> m Bool) -- ^The predicate.
+          -> (Text -> PredicateErrorMsg)
+          -> Predicate m Text
           -> Asker m Verbatim
-predAsker p errP f = asker p (error "Type error in predAsker. This is a bug.")
-                           errP (f . fromVerbatim)
+predAsker p errP f =
+   asker p (error "LIBRARY BUG: undefined in System.REPL.predAsker") (errP . fromVerbatim) (f . fromVerbatim)
 
 -- |An asker based on Read which asks for an optional value.
 maybeAsker :: (Monad m, Functor m, Read a)
            => PromptMsg
-           -> TypeErrorMsg
-           -> PredicateErrorMsg
+           -> (Text -> TypeErrorMsg)
+           -> (a -> PredicateErrorMsg)
            -> Predicate m a
            -> Asker m (Maybe a)
 maybeAsker pr errT errP pred = maybeAskerP pr errP (readParser errT) pred
