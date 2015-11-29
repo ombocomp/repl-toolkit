@@ -77,24 +77,23 @@ module System.REPL.Command (
 import Prelude hiding (putStrLn, putStr, (++), length, replicate)
 import qualified Prelude as P
 
-import Control.Arrow (first)
 import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Control.Monad.Loops (unfoldrM, iterateUntil)
 import Data.Char (isSpace)
-import qualified Data.Functor.Apply as Ap
 import qualified Data.Functor.Bind as Bi
 import Data.Functor.Monadic
 import qualified Data.List as LU
 import qualified Data.List.Safe as L
 import Data.ListLike(ListLike(..))
+import Data.ListLike.IO (ListLikeIO(..))
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Ord
 import qualified Data.Text as T
-import Data.Typeable
 import Numeric.Peano
-import System.REPL
+import System.REPL.Ask
+import System.REPL.Types
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Language as P
 import qualified Text.Parsec.Token as P
@@ -102,85 +101,6 @@ import qualified Text.Parsec.Token as P
 -- alias for Data.ListLike.append
 (++) :: (ListLike full item) => full -> full -> full
 (++) = append
-
--- Exceptions
--------------------------------------------------------------------------------
-
--- |Generic error related to command execution.
-data SomeCommandError = forall e.Exception e => SomeCommandError e deriving (Typeable)
-instance Show SomeCommandError where show (SomeCommandError e) = show e
-instance Exception SomeCommandError
-
-commandErrorUpcast :: (Exception a) => a -> SomeException
-commandErrorUpcast = toException . SomeCommandError
-commandErrorDowncast :: (Exception a) => SomeException -> Maybe a
-commandErrorDowncast x = do {SomeCommandError y <- fromException x; cast y}
-
--- |The input of a command was malformed and could not interpreted. I.e.
---  the input contained inadmissible characters, or quotes were mismatched.
---  The 'Text' argument contains the parser error.
-data MalformedParamsError = MalformedParamsError T.Text deriving (Show, Eq, Typeable, Ord)
-instance Exception MalformedParamsError where
-   toException = commandErrorUpcast
-   fromException = commandErrorDowncast
-
--- |Too many parameters were given to a command. The first value is the maximum,
---  the second the actual number.
-data TooManyParamsError = TooManyParamsError Int Int deriving (Show, Eq, Typeable, Ord)
-instance Exception TooManyParamsError where
-   toException = commandErrorUpcast
-   fromException = commandErrorDowncast
-
--- |Too few parameters were given to a command. The first value is the minium,
---  the second the actual number.
-data TooFewParamsError = TooFewParamsError Int Int deriving (Show, Eq, Typeable, Ord)
-instance Exception TooFewParamsError where
-   toException = commandErrorUpcast
-   fromException = commandErrorDowncast
-
--- Command type
--------------------------------------------------------------------------------
-
--- |A REPL command, possibly with parameters.
-data Command m i a = Command{
-                     -- |The short name of the command. Purely informative.
-                     commandName :: T.Text,
-                     -- |Returns whether the first part of an input
-                     --  (the command name) matches
-                     --  a the command. The simplest form is
-                     --  @((==) . getPart) s@ for some string s, but more liberal
-                     --  matchings are possible.
-                     commandTest :: i -> Bool,
-                     -- |A description of the command.
-                     commandDesc :: T.Text,
-                     -- |Runs the command with the input text as parameter,
-                     --  returning the unconsumed input.
-                     runPartialCommand :: [i] -> m (a, [i])}
-
-instance Functor m => Functor (Command m i) where
-   fmap f c@Command{runPartialCommand=run} = c{runPartialCommand=(fmap (first f)  . run)}
-
-instance (Monad m) => Ap.Apply (Command m i) where
-   -- |Runs the first command, then the second with the left-over input.
-   --  The result of the first command is applied to that of the second.
-   --
-   --  All other fields (name, description,...) of the second command are
-   --  ignored.
-   f <.> g = f{runPartialCommand = h}
-      where
-         h input = do (func, output) <- runPartialCommand f input
-                      (arg, output') <- runPartialCommand g output
-                      return (func arg, output')
-
-
-instance (Monad m) => Bi.Bind (Command m i) where
-   -- |The same as 'Ap.<.>', but the second argument can read the result of the
-   --  first.
-   f >>- g = f{runPartialCommand = h}
-      where
-         h input = do (res, output)   <- runPartialCommand f input
-                      (res', output') <- runPartialCommand (g res) output
-                      return (res', output')
 
 -- |Runs the command with the input text as parameter, discarding any left-over
 --  input.
@@ -237,7 +157,7 @@ subcommand x xs = x Bi.>>- \y -> oneOf "" "" (L.map ($ y) xs)
 -- |Splits and trims the input of a command. If the input cannot be parsed, a
 --  'MalformedCommand' exception is thrown.
 --
---  -- *Format
+--  === Format
 --
 --  Any non-whitespace sequence of characters is interpreted as
 --  one argument, unless double quotes (") are used, in which case

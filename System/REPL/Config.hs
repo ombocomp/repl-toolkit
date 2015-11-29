@@ -6,7 +6,8 @@ module System.REPL.Config (
    readConfigFile,
    readConfigJSON,
    readConfigShow,
-   NoParseError(..),
+   -- *A NoConfigFileParseError gets thrown whenever a config file can't be parsed.
+   NoConfigFileParseError(..),
    ) where
 
 import Prelude hiding ((++), FilePath)
@@ -14,24 +15,20 @@ import Prelude hiding ((++), FilePath)
 import Control.Monad.Catch
 import Control.Monad.IO.Class
 import Data.Aeson
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Default
 import Data.Functor.Monadic
-import Data.Text.Lazy.Encoding (decodeUtf8, encodeUtf8)
-import qualified Data.Text.Lazy as T
-import Data.Typeable
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import qualified Data.Text as T
 import qualified System.FilePath as Fp
 import System.Directory
+import System.REPL.Types
 import Text.Read (readMaybe)
 
--- |Indicates that some string was not able to be parsed.
-data NoParseError = NoParseError T.Text deriving (Show, Eq, Read, Typeable)
-
-instance Exception NoParseError
-
 -- |Creates a NoParseError out of a 'Fp.FilePath'.
-noParseError :: Fp.FilePath -> NoParseError
-noParseError = NoParseError . T.pack
+noParseError :: Fp.FilePath -> NoConfigFileParseError
+noParseError = NoConfigFileParseError . T.pack
 
 -- |Variant of 'readConfigFile' that uses 'Show' and 'Read' for (de)serialization.
 --
@@ -41,9 +38,9 @@ readConfigShow :: forall m a.
                    Read a)
                => Fp.FilePath
                -> m a
-readConfigShow path = readConfigFile path readEither showBL
+readConfigShow path = readConfigFile path readEither showBS
    where
-      showBL = encodeUtf8 . T.pack . show
+      showBS = encodeUtf8 . T.pack . show
       readEither = maybe (Left $ noParseError path) Right . readMaybe . T.unpack . decodeUtf8
 
 -- |Variant of 'readConfigFile' that uses JSON for (de)serialization.
@@ -54,9 +51,9 @@ readConfigJSON :: forall m a.
                    FromJSON a)
                => Fp.FilePath
                -> m a
-readConfigJSON path = readConfigFile path decodeEither encode
+readConfigJSON path = readConfigFile path decodeEither (BL.toStrict . encode)
    where
-      decodeEither = maybe (Left $ noParseError path) Right . decode
+      decodeEither = maybe (Left $ noParseError path) Right . decode . BL.fromStrict
 
 -- |Tries to read a configuration from file. If the file is missing,
 --  a default instance is written to file and returned. The following
@@ -69,9 +66,9 @@ readConfigJSON path = readConfigFile path decodeEither encode
 readConfigFile :: forall e m a.
                   (MonadThrow m, Functor m, MonadIO m, Default a, Exception e)
                => Fp.FilePath -- ^Path of the configuration file.
-               -> (BL.ByteString -> Either e a)
+               -> (B.ByteString -> Either e a)
                   -- ^Parser for the file's contents.
-               -> (a -> BL.ByteString)
+               -> (a -> B.ByteString)
                   -- ^Encoder for the default value. If the given configuration
                   --  file does not exist, a default value will be serialized
                   --  using this function.
@@ -79,7 +76,7 @@ readConfigFile :: forall e m a.
 readConfigFile path parser writer = do
    liftIO $ createDirectoryIfMissing True $ Fp.takeDirectory path
    exists <- liftIO $ doesFileExist path
-   content <- if not exists then do liftIO $ BL.writeFile path (writer (def :: a))
+   content <- if not exists then do liftIO $ B.writeFile path (writer (def :: a))
                                     return $ Right def
-              else liftIO (BL.readFile path) >$> parser
+              else liftIO (B.readFile path) >$> parser
    either throwM return content
