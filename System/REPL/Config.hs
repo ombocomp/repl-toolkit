@@ -6,7 +6,8 @@ module System.REPL.Config (
    readConfigFile,
    readConfigJSON,
    readConfigShow,
-   -- *A NoConfigFileParseError gets thrown whenever a config file can't be parsed.
+   -- *Exceptions
+   -- |A NoConfigFileParseError gets thrown whenever a config file can't be parsed.
    NoConfigFileParseError(..),
    ) where
 

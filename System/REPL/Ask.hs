@@ -4,18 +4,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 
--- |Functions to expedite the building of REPLs.
+-- |Asking the user for input on the console.
+--
+--  The main type is 'Asker', which takes care of parsing
+--  and verifying user input.
 module System.REPL.Ask (
-   -- *String-generic versions of Prelude Functions
-   putErr,
-   putErrLn,
-   prompt,
-   -- * Prompts
-   prompt',
-   promptAbort,
-   -- *Feture-rich reading of user-input
-   -- |These functions automate parsing and validating command-line
-   --  input via the 'Asker' type.
+   -- *Types
    PromptMsg,
    TypeErrorMsg,
    PredicateErrorMsg,
@@ -23,10 +17,11 @@ module System.REPL.Ask (
    Parser,
    Asker(..),
    AskFailure(..),
+   -- * Creating askers
    askerP,
    typeAskerP,
    maybeAskerP,
-   -- **Asking based on 'Read'
+   -- **Creating askers via 'Read'
    -- |These askers use 'Text.Read.readMaybe' as their parser.
    --
    --  It is possible to ask for Strings, but then quotes will be required
@@ -38,8 +33,9 @@ module System.REPL.Ask (
    predAsker,
    maybeAsker,
    Verbatim(..),
-   -- **Running askers
-   -- |Since the parsing depends on the Read-instance, the expected result type
+   -- *Running askers
+   -- |Created askers can be run via these functions.
+   --  Since the parsing depends on the Read-instance, the expected result type
    --  must be explicitly given. E.g.:
    --
    -- @
@@ -174,7 +170,9 @@ maybeAsker pr errT errP pred = maybeAskerP pr errP (readParser errT) pred
 -- Running askers
 --------------------------------------------------------------------------------
 
--- |Executes an Asker. If the process fails, an exception is thrown.
+-- |Executes an Asker. An 'AskFailure' is thrown if the inpout can't be
+--  parsing into a value of the correct type or if the input fails the 'Asker''s
+--  predicate.
 ask :: (MonadIO m, MonadCatch m)
     => Asker m a
     -> Maybe T.Text

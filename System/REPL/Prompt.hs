@@ -6,7 +6,7 @@
 
 -- |Little helper functions for getting and putting lines.
 --  
---  Names from "Data.ListLike.IO" clash with those of Prelude.
+--  This module re-exports part of "Data.ListLike.IO", which contains names that clash with Prelude.
 module System.REPL.Prompt (
    -- *String-generic versions of Prelude Functions
    module Data.ListLike.IO,

@@ -1,4 +1,4 @@
-0.6 Switched from lazy to strict text. Added user input as parameter for Asker error messages.
+1.0 Refactored the package. Switched from lazy to strict text. Added user input as parameter for Asker error messages.
 
 0.5 Replaced system-filepath with filepath, as system-filepath has become deprecated. This is a minor, but breaking, change.
 

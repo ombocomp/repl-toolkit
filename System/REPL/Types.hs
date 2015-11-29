@@ -5,6 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
+-- |Types used by other modules in the package.
 module System.REPL.Types where
 
 import Control.Exception
