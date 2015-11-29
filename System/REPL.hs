@@ -32,7 +32,7 @@ module System.REPL (
    --
    --  It is possible to ask for Strings, but then quotes will be required
    --  around them (per their Read-instance). To get the user's
-   --  input as-is, use the 'Verbatim' type.
+   --  input as-is, use the 'Verbatim' type or 'predAsker'.
    readParser,
    asker,
    typeAsker,
@@ -242,12 +242,14 @@ readParser :: Read a
 readParser errT t = maybe (Left $ errT t) Right . readMaybe . T.unpack $ t
 
 -- |Creates a general 'Asker' with 'Text.Read.readMaybe' as its parser.
---  Using 'Data.Read.readMaybe' is perfectly fine for most values, but it has
---  two drawbacks:
+--  Using 'Data.Read.readMaybe' is perfectly fine for most values, keep in mind
+--  that the input Text has to be unpacked into a string. This can be costly
+--  on very large inputs.
 --
---  1. The user input is unpacked into a String and then parsed. This can
---     incur a performance hit for large inputs.
---  2. A Read-instance must be available for the expected type.
+--  __NOTE:__ Instances of String/Text have to be surrounded with quotes (\").
+--  You practically never want this when asking for input.
+--  If you want to get the user input as-is, restrict the return type to
+--  @Asker m Verbatim@ or use 'predAsker'.
 asker :: (Monad m, Read a)
       => PromptMsg
       -> (T.Text -> TypeErrorMsg)
@@ -263,15 +265,15 @@ typeAsker :: (Monad m, Read a)
           -> Asker m a
 typeAsker p errT = asker p errT (error "LIBRARY BUG: undefined in System.REPL.typeAsker") (const $ return True)
 
--- |Creates an 'Asker' which takes its input verbatim as 'Text'. The input
---  thus only has to pass a predicate, not any parsing.
+-- |Creates an 'Asker' which takes its input verbatim as 'Text'.
+--  Quotes around the input are not required.
+--  The input thus only has to pass a predicate, not any parsing.
 predAsker :: (Monad m)
           => PromptMsg
           -> (T.Text -> PredicateErrorMsg)
           -> Predicate m T.Text
-          -> Asker m Verbatim
-predAsker p errP f =
-   asker p (error "LIBRARY BUG: undefined in System.REPL.predAsker") (errP . fromVerbatim) (f . fromVerbatim)
+          -> Asker m T.Text
+predAsker pr errP f = askerP pr errP Right f
 
 -- |An asker based on Read which asks for an optional value.
 maybeAsker :: (Monad m, Read a)
