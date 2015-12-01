@@ -36,17 +36,20 @@ type Parser a = T.Text -> Either T.Text a
 --  in case of failures.
 --
 --  The components are a prompt, a parser, and a predicate that
---  the parsed value must fulfil. The predicate, being monadic, can
---  perform arbitrarily complex tests, such as checking whether a given
---  date is in the future, whether an item is in a database, whether
---  a file with a given name exists, etc.
-data Asker m a = Asker{ -- |The prompt to be displayed to the user.
-                        askerPrompt::T.Text,
-                        -- |The parser for the input value.
-                        askerParser::Parser a,
-                        -- |The predicate which the input, once read,
-                        --  must fulfill. The Left side is an error message.
-                        askerPredicate::a -> m (Either T.Text ())}
+--  the parsed value must fulfil. The the predicate
+--
+--  * is monadic and
+--  * can change the returned type (useful e.g. getting records based on IDs)
+data Asker m a b = Asker{ -- |The prompt to be displayed to the user.
+                          askerPrompt::T.Text,
+                          -- |The parser for the input value.
+                          askerParser::Parser a,
+                          -- |The predicate which the input, once read,
+                          --  must fulfill. The Left side is an error message.
+                          askerPredicate::a -> m (Either T.Text b)}
+
+-- |An Asker which does not convert its argument into different type after parsing.
+type Asker' m a = Asker m a a
 
 
 -- |Represents a failure during the running of an asking function.
