@@ -62,6 +62,7 @@ module System.REPL.Command (
    -- * Helpers
    summarizeCommands,
    -- * Making commands
+   -- |Ignore the "a0"-type parameters in the Askers.
    makeCommand,
    makeCommand1,
    makeCommand2,
@@ -229,7 +230,7 @@ makeCommand1 :: (MonadIO m, MonadCatch m)
                      -- ^If True, running the command will run the Asker's
                      --  IO action if not enough input is provided. If False
                      --  a 'ParamNumError' will be thrown.
-             -> Asker m a -- ^'Asker' for the first parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
              -> (T.Text -> a -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand1 n t d canAsk p1 f = Command n t d f'
@@ -246,8 +247,8 @@ makeCommand2 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
              -> (T.Text -> a -> b -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand2 n t d canAsk p1 p2 f = Command n t d f'
@@ -265,9 +266,9 @@ makeCommand3 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
-             -> Asker m c -- ^'Asker' for the third parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
+             -> Asker m c0 c -- ^'Asker' for the third parameter.
              -> (T.Text -> a -> b -> c -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand3 n t d canAsk p1 p2 p3 f = Command n t d f'
@@ -286,10 +287,10 @@ makeCommand4 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
-             -> Asker m c -- ^'Asker' for the third parameter.
-             -> Asker m d -- ^'Asker' for the fourth parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
+             -> Asker m c0 c -- ^'Asker' for the third parameter.
+             -> Asker m d0 d -- ^'Asker' for the fourth parameter.
              -> (T.Text -> a -> b -> c -> d -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand4 n t d canAsk p1 p2 p3 p4 f = Command n t d f'
@@ -309,11 +310,11 @@ makeCommand5 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
-             -> Asker m c -- ^'Asker' for the third parameter.
-             -> Asker m d -- ^'Asker' for the fourth parameter.
-             -> Asker m e -- ^'Asker' for the fifth parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
+             -> Asker m c0 c -- ^'Asker' for the third parameter.
+             -> Asker m d0 d -- ^'Asker' for the fourth parameter.
+             -> Asker m e0 e -- ^'Asker' for the fifth parameter.
              -> (T.Text -> a -> b -> c -> d -> e -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand5 n t d canAsk p1 p2 p3 p4 p5 f = Command n t d f'
@@ -334,12 +335,12 @@ makeCommand6 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
-             -> Asker m c -- ^'Asker' for the third parameter.
-             -> Asker m d -- ^'Asker' for the fourth parameter.
-             -> Asker m e -- ^'Asker' for the fifth parameter.
-             -> Asker m f -- ^'Asker' for the sixth parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
+             -> Asker m c0 c -- ^'Asker' for the third parameter.
+             -> Asker m d0 d -- ^'Asker' for the fourth parameter.
+             -> Asker m e0 e -- ^'Asker' for the fifth parameter.
+             -> Asker m f0 f -- ^'Asker' for the sixth parameter.
              -> (T.Text -> a -> b -> c -> d -> e -> f -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand6 n t d canAsk p1 p2 p3 p4 p5 p6 f = Command n t d f'
@@ -361,13 +362,13 @@ makeCommand7 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
-             -> Asker m c -- ^'Asker' for the third parameter.
-             -> Asker m d -- ^'Asker' for the fourth parameter.
-             -> Asker m e -- ^'Asker' for the fifth parameter.
-             -> Asker m f -- ^'Asker' for the sixth parameter.
-             -> Asker m g -- ^'Asker' for the seventh parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
+             -> Asker m c0 c -- ^'Asker' for the third parameter.
+             -> Asker m d0 d -- ^'Asker' for the fourth parameter.
+             -> Asker m e0 e -- ^'Asker' for the fifth parameter.
+             -> Asker m f0 f -- ^'Asker' for the sixth parameter.
+             -> Asker m g0 g -- ^'Asker' for the seventh parameter.
              -> (T.Text -> a -> b -> c -> d -> e -> f -> g -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand7 n t d canAsk p1 p2 p3 p4 p5 p6 p7 f = Command n t d f'
@@ -390,14 +391,14 @@ makeCommand8 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-             -> Asker m a -- ^'Asker' for the first parameter.
-             -> Asker m b -- ^'Asker' for the second parameter.
-             -> Asker m c -- ^'Asker' for the third parameter.
-             -> Asker m d -- ^'Asker' for the fourth parameter.
-             -> Asker m e -- ^'Asker' for the fifth parameter.
-             -> Asker m f -- ^'Asker' for the sixth parameter.
-             -> Asker m g -- ^'Asker' for the seventh parameter.
-             -> Asker m h -- ^'Asker' for the eighth parameter.
+             -> Asker m a0 a -- ^'Asker' for the first parameter.
+             -> Asker m b0 b -- ^'Asker' for the second parameter.
+             -> Asker m c0 c -- ^'Asker' for the third parameter.
+             -> Asker m d0 d -- ^'Asker' for the fourth parameter.
+             -> Asker m e0 e -- ^'Asker' for the fifth parameter.
+             -> Asker m f0 f -- ^'Asker' for the sixth parameter.
+             -> Asker m g0 g -- ^'Asker' for the seventh parameter.
+             -> Asker m h0 h -- ^'Asker' for the eighth parameter.
              -> (T.Text -> a -> b -> c -> d -> e -> f -> g -> h -> m z) -- ^Command function.
              -> Command m T.Text z
 makeCommand8 n t d canAsk p1 p2 p3 p4 p5 p6 p7 p8 f = Command n t d f'
@@ -429,8 +430,8 @@ makeCommandN :: (MonadIO m, MonadCatch m)
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input. This only
                      --  affects the necessary parameters.
-             -> [Asker m a] -- ^'Asker's for the necessary parameters.
-             -> [Asker m a] -- ^'Asker's for the optional parameters.
+             -> [Asker m a0 a] -- ^'Asker's for the necessary parameters.
+             -> [Asker m b0 a] -- ^'Asker's for the optional parameters.
              -> (T.Text -> [a] -> m z)
              -> Command m T.Text z
 makeCommandN n t d canAsk necc opt f = Command n t d f'
@@ -480,7 +481,7 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
       padRight c i cs = cs ++ replicate (i - length cs) c
 
 askC :: (MonadIO m, MonadCatch m)
-     => Bool -> Asker m a -> [T.Text] -> Int -> Int -> m a
+     => Bool -> Asker m a0 a -> [T.Text] -> Int -> Int -> m a
 askC True f xs _ i = ask f (xs L.!! i)
 askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
 
