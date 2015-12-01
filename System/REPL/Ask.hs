@@ -18,6 +18,8 @@ module System.REPL.Ask (
    Asker(..),
    AskFailure(..),
    -- * Creating askers
+   -- |These are convenience functions.
+   --  You can also create 'Asker's directly via the constructor.
    askerP,
    typeAskerP,
    maybeAskerP,
@@ -70,6 +72,8 @@ import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Char (isSpace)
 import Data.Functor.Monadic
 import qualified Data.Text as T
+import System.Directory (doesDirectoryExist, doesFileExist)
+import System.FilePath (isValid)
 import System.REPL.Prompt
 import System.REPL.Types
 import Text.Read (readMaybe)
@@ -80,7 +84,7 @@ import Text.Read (readMaybe)
 -- |Creates a general 'Asker' with a custom parsing function and a predicate
 --  that the parsed value has to pass. If either the parsing or the predicate
 --  fail, one of the given error messages is displayed.
-askerP :: (Monad m)
+askerP :: Monad m
        => PromptMsg
        -> (a -> PredicateErrorMsg)
        -> Parser a
@@ -92,22 +96,22 @@ askerP pr errP parse pred = Asker pr parse check
                                   False -> Left $ errP x)
 
 -- |Creates an 'Asker' which only cares about the type of the input.
-typeAskerP :: (Monad m)
-            => PromptMsg
-            -> Parser a
-            -> Asker' m a
+typeAskerP :: Monad m
+           => PromptMsg
+           -> Parser a
+           -> Asker' m a
 typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.typeAskerP") parse (const $ return True)
 
 -- |An asker which asks for an optional value. If only whitespace
 --  is entered (according to 'Data.Char.isSpace'), it returns 'Nothing'
 --  without further parsing or checking; otherwise, it behaves identically
 --  to 'asker'.
-maybeAskerP :: (Monad m)
-           => PromptMsg
-           -> (a -> PredicateErrorMsg)
-           -> Parser a
-           -> Predicate m a
-           -> Asker' m (Maybe a)
+maybeAskerP :: Monad m
+            => PromptMsg
+            -> (a -> PredicateErrorMsg)
+            -> Parser a
+            -> Predicate m a
+            -> Asker' m (Maybe a)
 maybeAskerP pr errP parse pred = Asker pr parse' check
    where
       parse' t = if T.all isSpace t then Right Nothing
@@ -221,81 +225,33 @@ untilValid m = m `catch` handler
 -- Example askers
 -------------------------------------------------------------------------------
 
--- |Indicates whether the target of a path exists and what form it has.
-data PathExistenceType = IsDirectory | IsFile | DoesNotExist
-
-
-filepathAsker = undefined
-{-
--- |Asks the user fora file or a directory.
+-- |Asks the user for a file or a directory.
+-- 
+--  Parsing checks for basic validity via 'System.FilePath.isValid'. Invalid paths are rejected.
+--
+--  After that, the asker determines whether the target exists and what type
+--  it has. You can run a predicate on that information.
 filepathAsker :: MonadIO m
               => PromptMsg
+              -> (FilePath -> TypeErrorMsg)
+                 -- ^Type error message. The argument will be the raw (non-canonicalized) user input.
               -> ((PathExistenceType, FilePath) -> PredicateErrorMsg)
               -> Predicate m (PathExistenceType, FilePath)
-              -> Asker m (PathExistenceType, FilePath)
-filepathAsker pr errP pred = askerP pr errP id pred'
+              -> Asker m FilePath (PathExistenceType, FilePath)
+filepathAsker pr errT errP pred = Asker pr parse pred'
    where
-      pred' = undefined
+      parse = (\fp -> if isValid fp then Right fp else Left $ errT fp) . T.unpack
+
+      pred' fp = do
+         exType <- liftIO $ getExistenceType fp
+         ok <- pred (exType, fp)
+         return $ if ok then Right (exType, fp)
+                  else Left $ errP (exType, fp)
 
       getExistenceType :: FilePath -> IO PathExistenceType
       getExistenceType fp = do
-         isDir <- doesDirectoryExist
+         isDir <- doesDirectoryExist fp
          if isDir then return IsDirectory
-         else do isFile <- doesFileExist
+         else do isFile <- doesFileExist fp
                  return $ if isFile then IsFile
                                     else DoesNotExist
--}
-{-
-
-
-askerP :: (Monad m)
-       => PromptMsg
-       -> (a -> PredicateErrorMsg)
-       -> Parser a
-       -> Predicate m a
-       -> Asker m a
-
-
-          => PromptMsg
-          -> (T.Text -> PredicateErrorMsg)
-          -> Predicate m T.Text
-          -> Asker m T.Text
-predAsker pr errP f = askerP
-
-
--- |Changes the download directory.
-cd :: Lang -> Command (StateT AppState IO) T.Text ()
-cd l = makeCommand1 ":cd" (`elem'` [":cd"]) (msg l MsgChangeDirC) True cdAsk cd'
-   where
-      cdAsk = predAsker (msgs l MsgChangeDirAsk)
-                        undefined
-                        (const $ return True)
-
-      cd' _ v = do (wd,st) <- get2 pwd id
-                   path <- (wd </> fromText' (fromVerbatim v))
-                           |> encodeString
-                           |> liftIO . D.canonicalizePath
-                           >$> decodeString
-                   isValid <- liftIO $ validPath path
-                   if isValid then put $ st{pwd=path}
-                   else error $ liftIO $ putErrLn $ msg l MsgInvalidPath
-
-      -- |Returns whether a given @path@ is valid in the following sense:
-      --  * @isValid path@ returns true,
-      --  * at least some initial part of the path exists,
-      --  * the application has write permission to the last existing part
-      --    of the path.
-      --
-      --  IO errors are caught and result in @False@.
-      validPath :: FilePath -> IO Bool
-      validPath fp =
-         allM ($ fp) checks `catchIOError` const (return False)
-         where
-            checks = [return . valid, existingRoot]
-            -- |at least some initial part of the path must exist
-            existingRoot = mapM doesExist . paths >=$> or
-            -- inits of the filepath
-            paths = tail . L.inits . splitDirectories
-            doesExist = D.doesDirectoryExist . encodeString . L.foldl' (</>) empty
-
-            -}

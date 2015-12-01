@@ -46,7 +46,7 @@ data Asker m a b = Asker{ -- |The prompt to be displayed to the user.
                           askerParser::Parser a,
                           -- |The predicate which the input, once read,
                           --  must fulfill. The Left side is an error message.
-                          askerPredicate::a -> m (Either T.Text b)}
+                          askerPredicate::a -> m (Either PredicateErrorMsg b)}
 
 -- |An Asker which does not convert its argument into different type after parsing.
 type Asker' m a = Asker m a a
@@ -85,6 +85,12 @@ newtype Verbatim = Verbatim{fromVerbatim::T.Text}
 --  reads it a a 'T.Text'.
 instance Read Verbatim where
    readsPrec _ s = [(Verbatim $ T.pack s,"")]
+
+-- Types for example askers
+-------------------------------------------------------------------------------
+
+-- |Indicates whether the target of a path exists and what form it has.
+data PathExistenceType = IsDirectory | IsFile | DoesNotExist
 
 -- Command types
 -------------------------------------------------------------------------------
