@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 -- |Asking the user for input on the console.
 --
@@ -62,6 +63,7 @@ module System.REPL.Ask (
    -- *Example askers
    -- |A few askers for convenience.
    filepathAsker,
+   writablefilepathAsker,
    ) where
 
 import Prelude hiding (putStrLn, putStr, getLine, reverse)
@@ -71,9 +73,11 @@ import Control.Monad.Catch
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Char (isSpace)
 import Data.Functor.Monadic
+import qualified Data.List as L
 import qualified Data.Text as T
-import System.Directory (doesDirectoryExist, doesFileExist)
-import System.FilePath (isValid)
+import qualified System.Directory as D
+import qualified System.FilePath as FP
+import qualified System.IO.Error as ERR
 import System.REPL.Prompt
 import System.REPL.Types
 import Text.Read (readMaybe)
@@ -234,13 +238,12 @@ untilValid m = m `catch` handler
 filepathAsker :: MonadIO m
               => PromptMsg
               -> (FilePath -> TypeErrorMsg)
-                 -- ^Type error message. The argument will be the raw (non-canonicalized) user input.
               -> ((PathExistenceType, FilePath) -> PredicateErrorMsg)
               -> Predicate m (PathExistenceType, FilePath)
               -> Asker m FilePath (PathExistenceType, FilePath)
 filepathAsker pr errT errP pred = Asker pr parse pred'
    where
-      parse = (\fp -> if isValid fp then Right fp else Left $ errT fp) . T.unpack
+      parse = (\fp -> if FP.isValid fp then Right fp else Left $ errT fp) . T.unpack
 
       pred' fp = do
          exType <- liftIO $ getExistenceType fp
@@ -250,8 +253,48 @@ filepathAsker pr errT errP pred = Asker pr parse pred'
 
       getExistenceType :: FilePath -> IO PathExistenceType
       getExistenceType fp = do
-         isDir <- doesDirectoryExist fp
+         isDir <- D.doesDirectoryExist fp
          if isDir then return IsDirectory
-         else do isFile <- doesFileExist fp
+         else do isFile <- D.doesFileExist fp
                  return $ if isFile then IsFile
                                     else DoesNotExist
+
+-- |See 'filepathAsker'. This 'Asker' also ensures that the given path
+--  is writeable in the following sense:
+--
+--  * at least some initial part of the path exists and
+--  * the last existing part of the path is writeable.
+--
+--  For relative paths, we only check that the current directory is writable.
+--
+--  Handled exceptions:
+--
+--  * 'System.IO.Error.isPermissionError'
+--  * 'System.IO.Error.isDoesNotExistError'
+writablefilepathAsker
+   :: MonadIO m
+   => PromptMsg
+   -> (FilePath -> TypeErrorMsg)
+   -> ((PathExistenceType, FilePath) -> PredicateErrorMsg)
+   -> Predicate m (PathExistenceType, FilePath)
+   -> Asker m FilePath (PathExistenceType, FilePath)
+writablefilepathAsker pr errT errP pred = filepathAsker pr errT errP pred'
+   where
+      permError e = if ERR.isPermissionErrorType (ERR.ioeGetErrorType e) ||
+                       ERR.isDoesNotExistErrorType (ERR.ioeGetErrorType e)
+                    then Just () else Nothing
+      conc :: [FilePath] -> FilePath
+      conc = L.foldl' (FP.</>) ""
+      doesExist fp = (||) <$> D.doesDirectoryExist (conc fp) <*> D.doesFileExist (conc fp)
+
+      isWritable fp = catchJust permError (fp >>= D.getPermissions >$> D.writable) (const $ return False)
+
+      pred' (exType, fp) = do
+         ok <- liftIO $ do
+                  if FP.isRelative fp then do isWritable D.getCurrentDirectory
+                  else do
+                     existingRoot <- takeWhile snd <$> mapM (\x -> (x,) <$> doesExist x) (L.inits $ FP.splitDirectories fp)
+                     if null existingRoot then return False
+                     else isWritable (return . conc . fst . last $ existingRoot)
+         if ok then pred (exType, fp)
+               else return False
