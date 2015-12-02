@@ -73,6 +73,10 @@ module System.REPL.Command (
    makeCommand7,
    makeCommand8,
    makeCommandN,
+   -- * Example commands.
+   -- |A few commands for convenience.
+   noOpCmd,
+   defExitCmd,
    ) where
 
 import Prelude hiding (putStrLn, putStr, (++), length, replicate)
@@ -521,3 +525,26 @@ makeREPL regular exit unknown prompt handlers = void $ iterateUntil id iter
       unknown' = fmap (const False) $ unknown{commandTest = const True}
 
       allCommands = oneOf "" "" (exit' : regular' ++ [unknown'])
+
+-- Example commands
+-------------------------------------------------------------------------------
+
+-- |A command that takes no arguments and does nothing.
+noOpCmd :: (MonadIO m, MonadCatch m)
+        => T.Text
+           -- ^Command name.
+        -> [T.Text]
+           -- ^Alternative names for the command. The user can either
+           --  the command name or any of the alternative names.
+           --
+           --  E.g. "exit" with alternative names ":e", ":quit".
+        -> Command m T.Text ()
+noOpCmd n ns = makeCommand n ((`L.elem` (n:ns)) . T.strip) "" (const $ return ())
+
+-- |A 'noOpCmd' with ":exit" as the command name.
+--  Useful in conjunction with 'makeREPL',
+--  for cases in which the exit command
+--  doesn't need to perform any clean-up.
+defExitCmd :: (MonadIO m, MonadCatch m)
+           => Command m T.Text ()
+defExitCmd = noOpCmd ":exit" []
