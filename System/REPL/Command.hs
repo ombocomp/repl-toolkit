@@ -77,6 +77,7 @@ module System.REPL.Command (
    -- |A few commands for convenience.
    noOpCmd,
    defExitCmd,
+   defHelpCmd,
    ) where
 
 import Prelude hiding (putStrLn, putStr, (++), length, replicate)
@@ -496,7 +497,7 @@ askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask 
 --  * the "exit" command,
 --  * all regular commands, and then
 --  * the "unknown" command.
-makeREPL :: (MonadIO m, MonadCatch m, Functor f, Foldable f)
+makeREPL :: (MonadIO m, MonadCatch m)
          => [Command m T.Text a]
             -- ^The regular commands.
          -> Command m T.Text b
@@ -506,11 +507,11 @@ makeREPL :: (MonadIO m, MonadCatch m, Functor f, Foldable f)
             --  This one's 'commandTest' is replaced with @const True@.
          -> m T.Text
             -- ^The asker to execute before each command (i.e. the prompt).
-         -> f (Handler m ())
-            -- ^Collection (e.g. list) of Handlers for any exceptions that may arise.
+         -> [Handler m ()]
+            -- ^List of Handlers for any exceptions that may arise.
             --  Generally, you will want to handle at least the exceptions of this module
             --  ('SomeCommandError', 'MalformedParamsError', 'TooManyParamsError',
-            --   'TooFewParamsError'), and whatever the 'Asker' can throw.
+            --  'TooFewParamsError'), and whatever the 'Asker' can throw.
          -> m ()
             -- ^Asks the user repeatedly for input, until the input matches
             --  the command test of the "exit" command.
@@ -541,10 +542,26 @@ noOpCmd :: (MonadIO m, MonadCatch m)
         -> Command m T.Text ()
 noOpCmd n ns = makeCommand n ((`L.elem` (n:ns)) . T.strip) "" (const $ return ())
 
--- |A 'noOpCmd' with ":exit" as the command name.
---  Useful in conjunction with 'makeREPL',
---  for cases in which the exit command
---  doesn't need to perform any clean-up.
+-- |A command with the name ":exit" and the description
+--  "Exits the program." Otherwise, it does nothing.
+--
+--  You can use this as the exit-command for 'makeREPL',
+--  if no special clean-up is needed upon quitting.
 defExitCmd :: (MonadIO m, MonadCatch m)
            => Command m T.Text ()
-defExitCmd = noOpCmd ":exit" []
+defExitCmd = makeCommand n ((n==) . T.strip) "Exits the program." (const $ return ())
+   where
+      n = ":exit"
+
+-- |A help-command with the name ":help" and the
+--  description "Prints this help text."
+--
+--  It goes through the given list of commands and prints
+--  the name and description of each one.
+defHelpCmd :: (MonadIO m, MonadCatch m, Foldable f)
+           => f (Command m0 a b)
+           -> Command m T.Text ()
+defHelpCmd cmds = makeCommand n ((n==) . T.strip) "Prints this help text." help
+   where
+      n = ":help"
+      help _ = liftIO $ mapM_ (\x -> putStrLn $ commandName x ++ " - " ++ commandDesc x) cmds
