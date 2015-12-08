@@ -32,6 +32,7 @@ module System.REPL.Ask (
    --  input as-is, use the 'Verbatim' type or 'predAsker'.
    readParser,
    asker,
+   lineAsker,
    typeAsker,
    predAsker,
    maybeAsker,
@@ -88,7 +89,7 @@ import Text.Read (readMaybe)
 -- |Creates a general 'Asker' with a custom parsing function and a predicate
 --  that the parsed value has to pass. If either the parsing or the predicate
 --  fail, one of the given error messages is displayed.
-askerP :: Monad m
+askerP :: Functor m
        => PromptMsg
        -> (a -> PredicateErrorMsg)
        -> Parser a
@@ -100,17 +101,17 @@ askerP pr errP parse pred = Asker pr parse check
                                   False -> Left $ errP x)
 
 -- |Creates an 'Asker' which only cares about the type of the input.
-typeAskerP :: Monad m
+typeAskerP :: Applicative m
            => PromptMsg
            -> Parser a
            -> Asker' m a
-typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.typeAskerP") parse (const $ return True)
+typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.typeAskerP") parse (const $ pure True)
 
 -- |An asker which asks for an optional value. If only whitespace
 --  is entered (according to 'Data.Char.isSpace'), it returns 'Nothing'
 --  without further parsing or checking; otherwise, it behaves identically
 --  to 'asker'.
-maybeAskerP :: Monad m
+maybeAskerP :: Applicative m
             => PromptMsg
             -> (a -> PredicateErrorMsg)
             -> Parser a
@@ -121,7 +122,7 @@ maybeAskerP pr errP parse pred = Asker pr parse' check
       parse' t = if T.all isSpace t then Right Nothing
                                     else right Just $ parse t
 
-      check Nothing = return $ Right Nothing
+      check Nothing = pure $ Right Nothing
       check (Just t) = pred t >$> (\case True  -> Right (Just t)
                                          False -> Left $ errP t)
 
@@ -143,8 +144,8 @@ readParser errT t = maybe (Left $ errT t) Right . readMaybe . T.unpack $ t
 --  __NOTE:__ Instances of String/Text have to be surrounded with quotes (\").
 --  You practically never want this when asking for input.
 --  If you want to get the user input as-is, restrict the return type to
---  @Asker m Verbatim@ or use 'predAsker'.
-asker :: (Monad m, Read a)
+--  @Asker m Verbatim@ or use 'predAsker'/'lineAsker'.
+asker :: (Functor m, Read a)
       => PromptMsg
       -> (T.Text -> TypeErrorMsg)
       -> (a -> PredicateErrorMsg)
@@ -153,24 +154,29 @@ asker :: (Monad m, Read a)
 asker pr errT errP pred = askerP pr errP (readParser errT) pred
 
 -- |Creates an 'Asker' based on Read which just cares about the type of the input.
-typeAsker :: (Monad m, Read a)
+typeAsker :: (Applicative m, Read a)
           => PromptMsg
           -> (T.Text -> TypeErrorMsg)
           -> Asker' m a
-typeAsker p errT = asker p errT (error "LIBRARY BUG: undefined in System.REPL.typeAsker") (const $ return True)
+typeAsker p errT = asker p errT (error "LIBRARY BUG: undefined in System.REPL.typeAsker") (const $ pure True)
 
 -- |Creates an 'Asker' which takes its input verbatim as 'Text'.
 --  Quotes around the input are not required.
 --  The input thus only has to pass a predicate, not any parsing.
-predAsker :: (Monad m)
+predAsker :: (Functor m)
           => PromptMsg
           -> (T.Text -> PredicateErrorMsg)
           -> Predicate m T.Text
           -> Asker' m T.Text
 predAsker pr errP f = askerP pr errP Right f
 
+-- |A wrapper aroung 'getLine'. Prints no prompt and returns the user input as-is.
+lineAsker :: Applicative m
+          => Asker' m T.Text
+lineAsker = predAsker "" (error "LIBRARY BUG: undefined in System.REPL.lineAsker") (const $ pure True)
+
 -- |An asker based on Read which asks for an optional value.
-maybeAsker :: (Monad m, Read a)
+maybeAsker :: (Applicative m, Read a)
            => PromptMsg
            -> (T.Text -> TypeErrorMsg)
            -> (a -> PredicateErrorMsg)
