@@ -17,6 +17,7 @@ module System.REPL.Ask (
    Predicate,
    Parser,
    Asker(..),
+   Asker',
    AskFailure(..),
    -- * Creating askers
    -- |These are convenience functions.
