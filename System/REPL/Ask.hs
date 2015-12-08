@@ -12,17 +12,24 @@
 module System.REPL.Ask (
    -- *Types
    PromptMsg,
-   TypeErrorMsg,
-   PredicateErrorMsg,
+   TypeError,
+   PredicateError,
    Predicate,
+   Predicate',
    Parser,
    Asker(..),
    Asker',
+   -- ** Exceptions
    AskFailure(..),
+   GenericTypeFailure(..),
+   GenericPredicateFailure(..),
+   genericTypeFailure,
+   genericPredicateFailure,
    -- * Creating askers
-   -- |These are convenience functions.
+   -- |These are all just convenience functions.
    --  You can also create 'Asker's directly via the constructor.
-   askerP,
+   --
+   --  For errors, you can supply a custom exception or use 'GenericTypeFailure', 'GenericPredicateFailure'.
    typeAskerP,
    maybeAskerP,
    -- **Creating askers via 'Read'
@@ -31,13 +38,13 @@ module System.REPL.Ask (
    --  It is possible to ask for Strings, but then quotes will be required
    --  around them (per their Read-instance). To get the user's
    --  input as-is, use the 'Verbatim' type or 'predAsker'.
+   Verbatim(..),
    readParser,
    asker,
    lineAsker,
    typeAsker,
    predAsker,
    maybeAsker,
-   Verbatim(..),
    -- *Running askers
    -- |Created askers can be run via these functions.
    --  Since the parsing depends on the Read-instance, the expected result type
@@ -62,8 +69,12 @@ module System.REPL.Ask (
    ask',
    askEither,
    untilValid,
+   -- *Creating predicates
+   boolPredicate,
    -- *Example askers
    -- |A few askers for convenience.
+   PathRootDoesNotExist(..),
+   PathIsNotWritable(..),
    filepathAsker,
    writablefilepathAsker,
    ) where
@@ -87,26 +98,12 @@ import Text.Read (readMaybe)
 -- Askers
 -------------------------------------------------------------------------------
 
--- |Creates a general 'Asker' with a custom parsing function and a predicate
---  that the parsed value has to pass. If either the parsing or the predicate
---  fail, one of the given error messages is displayed.
-askerP :: Functor m
-       => PromptMsg
-       -> (a -> PredicateErrorMsg)
-       -> Parser a
-       -> Predicate m a
-       -> Asker' m a
-askerP pr errP parse pred = Asker pr parse check
-   where
-      check x = pred x >$> (\case True  -> Right x
-                                  False -> Left $ errP x)
-
 -- |Creates an 'Asker' which only cares about the type of the input.
 typeAskerP :: Applicative m
            => PromptMsg
            -> Parser a
            -> Asker' m a
-typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.typeAskerP") parse (const $ pure True)
+typeAskerP pr parse = Asker pr parse (pure . Right)
 
 -- |An asker which asks for an optional value. If only whitespace
 --  is entered (according to 'Data.Char.isSpace'), it returns 'Nothing'
@@ -114,18 +111,17 @@ typeAskerP pr parse = askerP pr (error "LIBRARY BUG: undefined in System.REPL.ty
 --  to 'asker'.
 maybeAskerP :: Applicative m
             => PromptMsg
-            -> (a -> PredicateErrorMsg)
             -> Parser a
-            -> Predicate m a
-            -> Asker' m (Maybe a)
-maybeAskerP pr errP parse pred = Asker pr parse' check
+            -> Predicate m a b
+            -> Asker m (Maybe a) (Maybe b)
+maybeAskerP pr parse pred = Asker pr parse' check
    where
       parse' t = if T.all isSpace t then Right Nothing
                                     else right Just $ parse t
 
       check Nothing = pure $ Right Nothing
-      check (Just t) = pred t >$> (\case True  -> Right (Just t)
-                                         False -> Left $ errP t)
+      check (Just t) = pred t >$> (\case Right t -> Right (Just t)
+                                         Left err -> Left err)
 
 -- Parsers based on Read
 -------------------------------------------------------------------------------
@@ -133,7 +129,7 @@ maybeAskerP pr errP parse pred = Asker pr parse' check
 -- |A parser based on 'Text.Read.readMaybe'. This suffices for the parsing of
 --  most data types.
 readParser :: Read a
-           => (T.Text -> TypeErrorMsg)
+           => (T.Text -> TypeError)
            -> Parser a
 readParser errT t = maybe (Left $ errT t) Right . readMaybe . T.unpack $ t
 
@@ -148,42 +144,39 @@ readParser errT t = maybe (Left $ errT t) Right . readMaybe . T.unpack $ t
 --  @Asker m Verbatim@ or use 'predAsker'/'lineAsker'.
 asker :: (Functor m, Read a)
       => PromptMsg
-      -> (T.Text -> TypeErrorMsg)
-      -> (a -> PredicateErrorMsg)
-      -> Predicate m a
+      -> (T.Text -> TypeError)
+      -> Predicate' m a
       -> Asker' m a
-asker pr errT errP pred = askerP pr errP (readParser errT) pred
+asker pr errT pred = Asker pr (readParser errT) pred
 
 -- |Creates an 'Asker' based on Read which just cares about the type of the input.
 typeAsker :: (Applicative m, Read a)
           => PromptMsg
-          -> (T.Text -> TypeErrorMsg)
+          -> (T.Text -> TypeError)
           -> Asker' m a
-typeAsker p errT = asker p errT (error "LIBRARY BUG: undefined in System.REPL.typeAsker") (const $ pure True)
+typeAsker p errT = asker p errT (pure . Right)
 
 -- |Creates an 'Asker' which takes its input verbatim as 'Text'.
 --  Quotes around the input are not required.
 --  The input thus only has to pass a predicate, not any parsing.
 predAsker :: (Functor m)
           => PromptMsg
-          -> (T.Text -> PredicateErrorMsg)
-          -> Predicate m T.Text
-          -> Asker' m T.Text
-predAsker pr errP f = askerP pr errP Right f
+          -> Predicate m T.Text b
+          -> Asker m T.Text b
+predAsker pr f = Asker pr Right f
 
 -- |A wrapper aroung 'getLine'. Prints no prompt and returns the user input as-is.
 lineAsker :: Applicative m
           => Asker' m T.Text
-lineAsker = predAsker "" (error "LIBRARY BUG: undefined in System.REPL.lineAsker") (const $ pure True)
+lineAsker = predAsker "" (pure . Right)
 
 -- |An asker based on Read which asks for an optional value.
 maybeAsker :: (Applicative m, Read a)
            => PromptMsg
-           -> (T.Text -> TypeErrorMsg)
-           -> (a -> PredicateErrorMsg)
-           -> Predicate m a
+           -> (T.Text -> TypeError)
+           -> Predicate' m a
            -> Asker' m (Maybe a)
-maybeAsker pr errT errP pred = maybeAskerP pr errP (readParser errT) pred
+maybeAsker pr errT pred = maybeAskerP pr (readParser errT) pred
 
 -- Running askers
 --------------------------------------------------------------------------------
@@ -233,6 +226,16 @@ untilValid m = m `catch` handler
       handler :: AskFailure -> m a
       handler l = liftIO (putStrLn $ show l) >> untilValid m
 
+-- Creating predicates
+-------------------------------------------------------------------------------
+
+-- |Creates a predicate from a boolean function and an error message.
+boolPredicate :: Functor m
+              => (a -> m Bool)
+              -> (a -> PredicateError)
+              -> Predicate m a a
+boolPredicate f errP t = (\case {True -> Right t; False -> Left (errP t)}) <$> f t
+
 -- Example askers
 -------------------------------------------------------------------------------
 
@@ -244,19 +247,18 @@ untilValid m = m `catch` handler
 --  it has. You can run a predicate on that information.
 filepathAsker :: MonadIO m
               => PromptMsg
-              -> (FilePath -> TypeErrorMsg)
-              -> ((PathExistenceType, FilePath) -> PredicateErrorMsg)
-              -> Predicate m (PathExistenceType, FilePath)
-              -> Asker m FilePath (PathExistenceType, FilePath)
-filepathAsker pr errT errP pred = Asker pr parse pred'
+              -> (FilePath -> TypeError)
+              -> Predicate m (PathExistenceType, FilePath) b
+              -> Asker m FilePath b
+filepathAsker pr errT pred = Asker pr parse pred'
    where
       parse = (\fp -> if FP.isValid fp then Right fp else Left $ errT fp) . T.unpack
 
       pred' fp = do
          exType <- liftIO $ getExistenceType fp
-         ok <- pred (exType, fp)
-         return $ if ok then Right (exType, fp)
-                  else Left $ errP (exType, fp)
+         pred (exType, fp)
+         --return $ if ok then Right (exType, fp)
+         --         else Left $ errP (exType, fp)
 
       getExistenceType :: FilePath -> IO PathExistenceType
       getExistenceType fp = do
@@ -272,6 +274,9 @@ filepathAsker pr errT errP pred = Asker pr parse pred'
 --  * at least some initial part of the path exists and
 --  * the last existing part of the path is writeable.
 --
+--  'PathRootDoesNotExist' and 'PathIsNotWritable' exceptions are thrown if the
+--  first or second of these conditions is violated.
+--
 --  For relative paths, we only check that the current directory is writable.
 --
 --  Handled exceptions:
@@ -281,11 +286,10 @@ filepathAsker pr errT errP pred = Asker pr parse pred'
 writablefilepathAsker
    :: MonadIO m
    => PromptMsg
-   -> (FilePath -> TypeErrorMsg)
-   -> ((PathExistenceType, FilePath) -> PredicateErrorMsg)
-   -> Predicate m (PathExistenceType, FilePath)
-   -> Asker m FilePath (PathExistenceType, FilePath)
-writablefilepathAsker pr errT errP pred = filepathAsker pr errT errP pred'
+   -> (FilePath -> TypeError)
+   -> Predicate m (PathExistenceType, FilePath) b
+   -> Asker m FilePath b
+writablefilepathAsker pr errT pred = filepathAsker pr errT pred'
    where
       permError e = if ERR.isPermissionErrorType (ERR.ioeGetErrorType e) ||
                        ERR.isDoesNotExistErrorType (ERR.ioeGetErrorType e)
@@ -296,12 +300,14 @@ writablefilepathAsker pr errT errP pred = filepathAsker pr errT errP pred'
 
       isWritable fp = catchJust permError (fp >>= D.getPermissions >$> D.writable) (const $ return False)
 
-      pred' (exType, fp) = do
-         ok <- liftIO $ do
-                  if FP.isRelative fp then do isWritable D.getCurrentDirectory
-                  else do
-                     existingRoot <- takeWhile snd <$> mapM (\x -> (x,) <$> doesExist x) (L.inits $ FP.splitDirectories fp)
-                     if null existingRoot then return False
-                     else isWritable (return . conc . fst . last $ existingRoot)
-         if ok then pred (exType, fp)
-               else return False
+      -- A utility function which gets a bool and returns the second argument if its value is false,
+      -- and the third if its true.
+      boolEither :: (Monad m, Exception a) => (m Bool) -> a -> m (Either SomeException b) -> m (Either SomeException b)
+      boolEither x falseCase trueCase = x >>= (\case{True -> trueCase; False -> return $ Left $ SomeException falseCase})
+
+      pred' args@(_, fp) = 
+         if FP.isRelative fp then boolEither (liftIO $ isWritable D.getCurrentDirectory) (PathIsNotWritable fp) (pred args)
+         else do
+            existingRoot <- liftIO $ takeWhile snd <$> mapM (\x -> (x,) <$> doesExist x) (L.inits $ FP.splitDirectories fp)
+            if null existingRoot then return (Left $ SomeException $ PathRootDoesNotExist fp)
+            else boolEither (liftIO $ isWritable (return . conc . fst . last $ existingRoot)) (PathIsNotWritable fp) (pred args)

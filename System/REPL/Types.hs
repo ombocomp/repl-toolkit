@@ -18,17 +18,20 @@ import Data.Typeable
 -------------------------------------------------------------------------------
 
 -- |An error message indicating that a value wasn't able to be parsed.
-type TypeErrorMsg = T.Text
+type TypeError = SomeException
 -- |An error message indicating that a value failied a predicate.
-type PredicateErrorMsg = T.Text
+type PredicateError = SomeException
 -- |A prompt.
 type PromptMsg = T.Text
 
 -- |A predicate which a value has to fulfil.
-type Predicate m a = a -> m Bool
+type Predicate m a b = a -> m (Either PredicateError b)
+
+-- |A predicate which does not change the type of its input.
+type Predicate' m a = Predicate m a a
 
 -- |A parser which either returns a parsed value or an error message.
-type Parser a = T.Text -> Either T.Text a
+type Parser a = T.Text -> Either TypeError a
 
 -- |The description of an \'ask for user input\'-action.
 --  The type parameters are the used monad (typically 'IO' or 'ExceptT'),
@@ -46,35 +49,44 @@ data Asker m a b = Asker{ -- |The prompt to be displayed to the user.
                           askerParser::Parser a,
                           -- |The predicate which the input, once read,
                           --  must fulfill. The Left side is an error message.
-                          askerPredicate::a -> m (Either PredicateErrorMsg b)}
+                          askerPredicate::Predicate m a b}
 
 -- |An Asker which does not convert its argument into different type after parsing.
 type Asker' m a = Asker m a a
-
 
 -- |Represents a failure during the running of an asking function.
 --  Either the input was incorrect in some way, or the process was aborted
 --  by the user.
 data AskFailure = -- |The input wasn't able to be parsed.
-                  TypeFailure TypeErrorMsg
+                  TypeFailure SomeException
                   -- |The parsed value failed a predicate.
-                  | PredicateFailure PredicateErrorMsg
-                  -- |An incorrect number of parameters was passed.
-                  | ParamFailure T.Text
-                  -- |No action was appropriate for the given input.
-                  | NothingFoundFailure
+                  | PredicateFailure SomeException
                   -- |The input was aborted by the user.
                   | AbortFailure
-   deriving (Typeable, Eq)
+   deriving (Typeable)
 
 instance Exception AskFailure
 
 instance Show AskFailure where
-   show (ParamFailure t) = T.unpack t
-   show NothingFoundFailure = "No appropriate action found!"
-   show (PredicateFailure t) = T.unpack t
-   show (TypeFailure t) = T.unpack t
+   show (PredicateFailure t) = "Predicate failure: " ++ show t
+   show (TypeFailure t) = "Type failure: " ++ show t
    show AbortFailure = "Input aborted."
+
+-- |A generic type failure for use with Askers.
+data GenericTypeFailure = GenericTypeFailure T.Text deriving (Show, Typeable, Eq)
+instance Exception GenericTypeFailure
+
+-- |Constructor for 'GenericTypeFailure' which wraps the value into a 'SomeException'.
+genericTypeFailure :: T.Text -> SomeException
+genericTypeFailure = SomeException . GenericTypeFailure
+
+-- |A generic predicate failure for use with Askers.
+data GenericPredicateFailure = GenericPredicateFailure T.Text deriving (Show, Typeable, Eq)
+instance Exception GenericPredicateFailure
+
+-- |Constructor for 'GenericTypeFailure' which wraps the value into a 'SomeException'.
+genericPredicateFailure :: T.Text -> SomeException
+genericPredicateFailure = SomeException . GenericPredicateFailure
 
 -- |A verbatim Text whose Read instance simply returns the read
 --  string, as-is.
@@ -90,7 +102,16 @@ instance Read Verbatim where
 -------------------------------------------------------------------------------
 
 -- |Indicates whether the target of a path exists and what form it has.
-data PathExistenceType = IsDirectory | IsFile | DoesNotExist
+data PathExistenceType = IsDirectory | IsFile | DoesNotExist deriving (Eq, Show, Ord, Read, Enum, Bounded)
+
+-- |Indicates that no part of a path exists.
+data PathRootDoesNotExist = PathRootDoesNotExist FilePath deriving (Typeable, Eq, Show)
+instance Exception PathRootDoesNotExist
+
+-- |Indicatres that the last existing portion of a path is not writable.
+data PathIsNotWritable = PathIsNotWritable FilePath deriving (Typeable, Eq, Show)
+instance Exception PathIsNotWritable
+
 
 -- Command types
 -------------------------------------------------------------------------------
