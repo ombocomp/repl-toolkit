@@ -118,6 +118,7 @@ module System.REPL.Command (
    -- * Dealing with arguments
    readArgs,
    getName,
+   defCommandTest,
    quoteArg,
    -- * Helpers
    summarizeCommands,
@@ -242,7 +243,7 @@ subcommand :: (Monad m, Monoid i)
 subcommand x xs = x Bi.>>- \y -> oneOf "" "" (L.map ($ y) xs)
 
 -- |Splits and trims the input of a command. If the input cannot be parsed, a
---  'MalformedCommand' exception is thrown.
+--  'MalformedParamsError' exception is thrown.
 --
 --  === Format
 --
@@ -277,10 +278,18 @@ readArgs = either err return . P.parse parser "" . T.unpack
             case res of (Right r) -> return r
                         (Left l) -> fail (show l)
 
--- |Gets the first part of a command string, or the empty string, if the comand
---  string is empty.
-getName :: (MonadThrow m) => T.Text -> m T.Text
-getName = fromMaybe mempty . L.head <$=< readArgs
+-- |Gets the first part of a command string. Returns Nothing
+--  if the string is empty of if 'readArgs' throws a 'MalformedParamsError'.
+getName :: T.Text -> Maybe T.Text
+getName = readArgs >=> L.head
+
+-- |The "default" command test for making commands.
+--  This function uses 'getName' to extract the first part of the user input,
+--  stripping whitespace and also checking whether the entire input is well-formed.
+defCommandTest :: [T.Text] -- ^Command names, including permissible aliases.
+               -> T.Text -- ^User input.
+               -> Bool
+defCommandTest xs = maybe False (`L.elem` xs) . getName
 
 -- |Surrounds an argument in quote marks, if necessary.
 --  This is useful when arguments were extracted via 'readArgs', which deletes
@@ -289,7 +298,6 @@ getName = fromMaybe mempty . L.head <$=< readArgs
 quoteArg :: T.Text -> T.Text
 quoteArg x = if T.null x || T.any isSpace x then '\"' `T.cons` x `T.snoc` '\"'
                                             else x
-
 
 -- |Creates a command without parameters.
 makeCommand :: (MonadIO m, MonadCatch m, Monoid i)
@@ -313,9 +321,9 @@ makeCommand1 :: (MonadIO m, MonadCatch m)
              -> (T.Text -> Bool) -- ^Command test.
              -> T.Text -- ^Command description
              -> Bool -- ^Whether the command can ask for input.
-                     -- ^If True, running the command will run the Asker's
+                     --  If True, running the command will run the Asker's
                      --  IO action if not enough input is provided. If False
-                     --  a 'ParamNumError' will be thrown.
+                     --  a 'TooFewParamsError' will be thrown.
              -> Asker m a0 a -- ^'Asker' for the first parameter.
              -> (T.Text -> a -> m z) -- ^Command function.
              -> Command m T.Text z

@@ -199,9 +199,7 @@ data Command m i a = Command{
                      commandName :: T.Text,
                      -- |Returns whether the first part of an input
                      --  (the command name) matches
-                     --  a the command. The simplest form is
-                     --  @((==) . getPart) s@ for some string s, but more liberal
-                     --  matchings are possible.
+                     --  a the command. 'defCommandTest' is appropriate for most cases.
                      commandTest :: i -> Bool,
                      -- |A description of the command.
                      commandDesc :: T.Text,
