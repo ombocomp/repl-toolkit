@@ -30,7 +30,8 @@ module System.REPL.Ask (
    -- |These are all just convenience functions.
    --  You can also create 'Asker's directly via the constructor.
    --
-   --  For errors, you can supply a custom exception or use 'GenericTypeFailure', 'GenericPredicateFailure'.
+   --  For errors, you can supply a custom exception or use 'GenericTypeError',
+   --  'GenericPredicateError'.
    typeAskerP,
    maybeAskerP,
    -- **Creating askers via 'Read'
@@ -182,9 +183,9 @@ maybeAsker pr errT pred = maybeAskerP pr (readParser errT) pred
 -- Running askers
 --------------------------------------------------------------------------------
 
--- |Executes an Asker. An 'AskFailure' is thrown if the inpout can't be
---  parsing into a value of the correct type or if the input fails the 'Asker''s
---  predicate.
+-- |Executes an Asker. A 'SomeAskerError' is thrown if the inpout can't be
+--  parsing into a value of the correct type, if the input fails the 'Asker''s
+--  predicate, or if the escape key is pressed.
 ask :: (MonadIO m, MonadCatch m)
     => Asker m a b
     -> Maybe T.Text
@@ -204,7 +205,7 @@ ask' a = ask a Nothing
 -- |Executes an 'Asker'. If the Text argument is Nothing, the user is asked
 --  to enter a line on stdin. If it is @Just x@, @x@ is taken to be input.
 --  
---  Additionally, the 
+--  Pressing the escape key returns a 'AskerInputAborterError' (if supported).
 askEither :: (MonadIO m, MonadCatch m)
           => Asker m a b
           -> Maybe T.Text
@@ -236,7 +237,7 @@ untilValid m = m `catch` handler
 boolPredicate :: Functor m
               => (a -> m Bool)
               -> (a -> PredicateError)
-              -> Predicate m a a
+              -> Predicate' m a
 boolPredicate f errP t = (\case {True -> Right t; False -> Left (errP t)}) <$> f t
 
 -- Example askers

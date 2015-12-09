@@ -6,14 +6,20 @@
 --  The module contains the following exception hierarchy:
 --
 --  * 'SomeREPLError'
---    * 'SomeAskerError'
---      * 'AskerTypeError'
---      * 'AskerPredicateError'
---      * 'AskerInputAbortedError'
---    * 'SomeCommandError'
---      * 'MalformedParamsError'
---      * 'TooFewParamsError'
---      * 'TooManyParamsError'
+--
+--      * 'SomeAskerError'
+--
+--          * 'AskerTypeError'
+--          * 'AskerPredicateError'
+--          * 'AskerInputAbortedError'
+--
+--      * 'SomeCommandError'
+--
+--          * 'MalformedParamsError'
+--          * 'TooFewParamsError'
+--          * 'TooManyParamsError'
+--
+--  * 'NoConfigFileParseError'
 --
 module System.REPL.Types where
 
@@ -51,7 +57,7 @@ type Parser a = T.Text -> Either TypeError a
 --  the parsed value must fulfil. The the predicate
 --
 --  * is monadic and
---  * can change the returned type (useful e.g. getting records based on IDs)
+--  * can change the returned type (useful for adjoining additional information)
 data Asker m a b = Asker{ -- |The prompt to be displayed to the user.
                           askerPrompt::T.Text,
                           -- |The parser for the input value.

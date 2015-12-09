@@ -4,28 +4,84 @@
 --  handling of user input and to offer functionality in a standard, composable
 --  way.
 --
---  
+--  Whereas an 'Asker' is good for getting a single value, a 'Command' can get
+--  multiple inputs and be composed with other commands.
 --
 --  Use cases:
 --
---  1. Asking the user for input that has to be of the right format or fulfil
---     specific constraints, such as asking for an @Int@ between 0 and 10, or
---     asking for a username that has to exist in some database.
+--  1. Getting specific numbers of arguments or optional arguments from the user. E.g.
+--
+--     @
+--     \{\-\# LANGUAGE OverloadedStrings \#\-\}
+--     
+--     import Data.Text (unpack)
+--
+--     asker :: Asker' IO String
+--     asker = Asker "Enter argument: " (Right . unpack) (return . Right)
+--
+--     cmd = makeCommand3 "command" ("command"==) "description" True [asker,asker,asker] (\t x y z -> putStrLn "yay!")
+--     @
+--     
+--     This is a command with 3 arguments. The user can enter the arguments
+--     in the same line or give them one by one:
+--
+--     >>> command arg1 arg2 arg3
+--     yay!
+--
+--     >>> command
+--     Enter argument:
+--     >>> arg1
+--     Enter  argument:
+--     >>> arg2
+--     Enter argument:
+--     >>> arg3
+--     yay!
+--     
+--     Had we set the bool above to @False@, only the first form would have been allowed.
+--
+--     Arguments can contain whitespace if they are surrounded with quotes:
+--
+--     >>> command "arg1 with spaces" arg2 arg3
+--     yay!
+--
+--     Optional arguments are also possible:
+--
+--     @
+--     cmd = makeCommandN "command" ("command"==) "description" True [asker] [optAsker]
+--                        (\t (x:xs) -> do putStrLn ("Required argument: " ++ x)
+--                                         if null xs then putStrLn "No optional argument."
+--                                         else putStrLn ("Optional argument: " ++ head xs))
+--     @
+--
+--     >>> command arg1
+--     Required argument: arg1
+--     
+--     >>> command arg1 arg2
+--     Required argument: arg1
+--     Optional argument: arg2
+--
 --  2. Creating command hierarchies, e.g.
 --
---     >>> myVersionControl commit "my first commit" only-binaries
+--     @
+--     commit = makeCommand 1 "commit" ...
+--     sendEmail = makeCommand "send-email"
+--     sendTweet = makeCommand "send-tweet"
 --
---     In this example, we could have @commit@ as a root command that
---     consumes the commit name "my first commit" and hands over to
---     the sub-command @only-binaries@.
+--     commit' = subcommand commit [sendEmail, sendTweet]
 --
---  3. Creating a REPL out of individual commands. Let us say that we have
---     a version control system with @commit, revert, diff@ commands, plus
---     an exit command like "exit", and one that prints some
---     "command not recognized" message if the user's input doesn't match
---     any commands. We can compose these commands with 'makeREPL', providing
---     robust command selection and obviating the need for manually writing the
---     input handling loop.
+--     main = makeREPLSimple [commit']
+--     @
+-- 
+--     >>> myVersionControl commit "my first commit" send-email
+--
+--     Here, @commit@ is the root command and @sendEmail@, @sendTweet@ its two
+--     possible sub-commands. The sub-commands get executed after their root command.
+--
+--  3. Making a REPL out of some commands.
+--
+--     As above, one can use 'makeREPL' or 'makeREPLSimple' to create a 
+--     REPL out of a list of commands and use it as the @main@ function instead
+--     of going through the chore of writing a loop it by hand.
 --
 --  Commands can take their input in one line, e.g.
 --
@@ -38,10 +94,13 @@
 module System.REPL.Command (
    -- *Command class
    Command(..),
-   runCommand,
-   runSingleCommand,
    oneOf,
    subcommand,
+   -- **Running commands
+   -- |You can use 'runPartialCommand' to run a command as well, but one generally doesn't want left-over input.
+   runCommand,
+   runSingleCommand,
+   -- **Making REPLs
    makeREPL,
    makeREPLSimple,
    -- *Exceptions
