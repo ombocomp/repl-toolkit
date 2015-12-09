@@ -100,6 +100,7 @@ module System.REPL.Command (
    -- |You can use 'runPartialCommand' to run a command as well, but one generally doesn't want left-over input.
    runCommand,
    runSingleCommand,
+   runSingleCommandIf,
    -- **Making REPLs
    makeREPL,
    makeREPLSimple,
@@ -170,20 +171,40 @@ import qualified Text.Parsec.Token as P
 
 -- |Runs the command with the input text as parameter, discarding any left-over
 --  input. The command test is disregarded.
-runCommand :: (Monad m, MonadThrow m) => Command m T.Text a -> T.Text -> m a
+-- 
+--  Can throw:
+--  
+--  * 'MalformedParamsError'
+runCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runCommand c = fmap fst . runPartialCommand c <=< readArgs
 
--- |Runs the command with the input text as parameter. If any input is left
---  unconsumed, an error is thrown.
+-- |Runs the command with the input text as parameter.
 --  The command test is disregarded.
+--
+--  Can throw:
+--  
+--  * 'MalformedParamsError'
+--  * 'TooManyParamsError', if any input is left unconsumed.
 runSingleCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
-runSingleCommand c t = do
+runSingleCommand c t = fromJust <$> runSingleCommandIf (c{commandTest = const True}) t
+
+-- |Runs the command with the input text as parameter. If the input doesn't
+--  pass the command test, @Nothing@ is returned.
+--
+--  Can throw:
+--  
+--  * 'MalformedParamsError'
+--  * 'TooManyParamsError', if any input is left unconsumed.
+runSingleCommandIf :: MonadThrow m => Command m T.Text a -> T.Text -> m (Maybe a)
+runSingleCommandIf c t = do
    t' <- readArgs t
-   (res, output) <- runPartialCommand c t'
-   let act = length t'
-       mx  = act - length output
-   when (not . L.null $ output) (throwM $ TooManyParamsError mx act)
-   return res
+   if L.null t' || not (commandTest c $ LU.head t') then return Nothing
+   else do
+      (res, output) <- runPartialCommand c t'
+      let act = length t'
+          mx  = act - length output
+      when (not . L.null $ output) (throwM $ TooManyParamsError mx act)
+      return $ Just res
 
 
 -- |Takes a list @xs@ and executes the first command in a list whose
