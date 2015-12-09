@@ -323,7 +323,8 @@ makeCommand1 n t d canAsk p1 f = Command n t d f'
    where
       mx = 1
       f' args = do let x0 = fromMaybe mempty $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
                    res <- f x0 x1
                    return (res, L.drop (mx+1) args)
 
@@ -341,8 +342,9 @@ makeCommand2 n t d canAsk p1 p2 f = Command n t d f'
    where
       mx = 2
       f' args = do let x0 = fromMaybe mempty $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
                    res <- f x0 x1 x2
                    return (res, L.drop (mx+1) args)
 
@@ -361,9 +363,10 @@ makeCommand3 n t d canAsk p1 p2 p3 f = Command n t d f'
    where
       mx = 3
       f' args = do let x0 = fromMaybe "" $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
-                   x3 <- askC canAsk p3 args mx 3
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
+                   x3 <- askC p3 args 3
                    res <- f x0 x1 x2 x3
                    return (res, L.drop (mx+1) args)
 
@@ -383,10 +386,11 @@ makeCommand4 n t d canAsk p1 p2 p3 p4 f = Command n t d f'
    where
       mx = 4
       f' args = do let x0 = fromMaybe "" $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
-                   x3 <- askC canAsk p3 args mx 3
-                   x4 <- askC canAsk p4 args mx 4
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
+                   x3 <- askC p3 args 3
+                   x4 <- askC p4 args 4
                    res <- f x0 x1 x2 x3 x4
                    return (res, L.drop (mx+1) args)
 
@@ -407,11 +411,12 @@ makeCommand5 n t d canAsk p1 p2 p3 p4 p5 f = Command n t d f'
    where
       mx = 5
       f' args = do let x0 = fromMaybe "" $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
-                   x3 <- askC canAsk p3 args mx 3
-                   x4 <- askC canAsk p4 args mx 4
-                   x5 <- askC canAsk p5 args mx 5
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
+                   x3 <- askC p3 args 3
+                   x4 <- askC p4 args 4
+                   x5 <- askC p5 args 5
                    res <- f x0 x1 x2 x3 x4 x5
                    return (res, L.drop (mx+1) args)
 
@@ -433,12 +438,13 @@ makeCommand6 n t d canAsk p1 p2 p3 p4 p5 p6 f = Command n t d f'
    where
       mx = 6
       f' args = do let x0 = fromMaybe mempty $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
-                   x3 <- askC canAsk p3 args mx 3
-                   x4 <- askC canAsk p4 args mx 4
-                   x5 <- askC canAsk p5 args mx 5
-                   x6 <- askC canAsk p6 args mx 6
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
+                   x3 <- askC p3 args 3
+                   x4 <- askC p4 args 4
+                   x5 <- askC p5 args 5
+                   x6 <- askC p6 args 6
                    res <- f x0 x1 x2 x3 x4 x5 x6
                    return (res, L.drop (mx+1) args)
 
@@ -461,13 +467,14 @@ makeCommand7 n t d canAsk p1 p2 p3 p4 p5 p6 p7 f = Command n t d f'
    where
       mx = 7
       f' args = do let x0 = fromMaybe "" $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
-                   x3 <- askC canAsk p3 args mx 3
-                   x4 <- askC canAsk p4 args mx 4
-                   x5 <- askC canAsk p5 args mx 5
-                   x6 <- askC canAsk p6 args mx 6
-                   x7 <- askC canAsk p7 args mx 7
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
+                   x3 <- askC p3 args 3
+                   x4 <- askC p4 args 4
+                   x5 <- askC p5 args 5
+                   x6 <- askC p6 args 6
+                   x7 <- askC p7 args 7
                    res <- f x0 x1 x2 x3 x4 x5 x6 x7
                    return (res, L.drop (mx+1) args)
 
@@ -491,14 +498,15 @@ makeCommand8 n t d canAsk p1 p2 p3 p4 p5 p6 p7 p8 f = Command n t d f'
    where
       mx = 8
       f' args = do let x0 = fromMaybe "" $ L.head args
-                   x1 <- askC canAsk p1 args mx 1
-                   x2 <- askC canAsk p2 args mx 2
-                   x3 <- askC canAsk p3 args mx 3
-                   x4 <- askC canAsk p4 args mx 4
-                   x5 <- askC canAsk p5 args mx 5
-                   x6 <- askC canAsk p6 args mx 6
-                   x7 <- askC canAsk p7 args mx 7
-                   x8 <- askC canAsk p8 args mx 8
+                   when (not canAsk) $ checkParamNum args mx
+                   x1 <- askC p1 args 1
+                   x2 <- askC p2 args 2
+                   x3 <- askC p3 args 3
+                   x4 <- askC p4 args 4
+                   x5 <- askC p5 args 5
+                   x6 <- askC p6 args 6
+                   x7 <- askC p7 args 7
+                   x8 <- askC p8 args 8
                    res <- f x0 x1 x2 x3 x4 x5 x6 x7 x8
                    return (res, L.drop (mx+1) args)
 
@@ -523,9 +531,9 @@ makeCommandN :: (MonadIO m, MonadCatch m)
 makeCommandN n t d canAsk necc opt f = Command n t d f'
    where
       min = P.length necc
-      -- max = natLength necc + natLength opt
 
-      f' args = do neccParams <- unfoldrM (comb args) (necc,1, Nothing)
+      f' args = do when (not canAsk) $ checkParamNum args min
+                   neccParams <- unfoldrM (comb args) (necc,1, Nothing)
                    let x0 = maybe "" id (L.head args)
                        from = L.length neccParams + 1
                        to = Just $ L.length args - 1
@@ -541,12 +549,12 @@ makeCommandN n t d canAsk necc opt f = Command n t d f'
       comb _ ([],_,_) = return Nothing
       comb inp (x:xs, i, j) =
          if isJust j && fromJust j < i then return Nothing
-         else askC canAsk x inp min i >$> args xs >$> Just
+         else askC x inp i >$> args xs >$> Just
 
          where args ys y = (y,(ys,i+1,j))
 
-      askC True f xs _ i = ask f (xs L.!! i)
-      askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs)) (ask f . Just) (xs L.!! i)
+      --askC True f xs _ i = ask f (xs L.!! i)
+      --askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs)) (ask f . Just) (xs L.!! i)
 
 -- |Prints out a list of command names, with their descriptions.
 summarizeCommands :: MonadIO m
@@ -566,10 +574,17 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
 
       padRight c i cs = cs ++ replicate (i - length cs) c
 
+-- |Throws a 'TooFewParamsError' if the length of the list is smaller than the second argument.
+checkParamNum :: MonadThrow m => [a] -> Int -> m ()
+checkParamNum xs need = if have < need then throwM $ TooFewParamsError need have else return ()
+   where have = length xs - 1 
+
+-- |Wrapper for 'ask'.
 askC :: (MonadIO m, MonadCatch m)
-     => Bool -> Asker m a0 a -> [T.Text] -> Int -> Int -> m a
-askC True f xs _ i = ask f (xs L.!! i)
-askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
+     => Asker m a0 a -> [T.Text] -> Int -> m a
+askC f xs i = ask f (xs L.!! i)
+
+--askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
 
 -- |Runs a REPL based on a set of commands.
 --  For a line of input, the commands are tried in following order:
