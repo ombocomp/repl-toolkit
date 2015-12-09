@@ -82,15 +82,6 @@
 --     As above, one can use 'makeREPL' or 'makeREPLSimple' to create a 
 --     REPL out of a list of commands and use it as the @main@ function instead
 --     of going through the chore of writing a loop it by hand.
---
---  Commands can take their input in one line, e.g.
---
--- >>>:cmd param1 "param2 with spaces" param3
---
---  or they can ask for missing parameters if so configured:
---
--- >>>:cmd param1 "param2 with spaces"
--- Please enter param3:
 module System.REPL.Command (
    -- *Command class
    Command(..),
