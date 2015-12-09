@@ -177,6 +177,10 @@ runCommand c = fmap fst . runPartialCommand c <=< readArgs
 --  
 --  * 'MalformedParamsError'
 --  * 'TooManyParamsError', if any input is left unconsumed.
+--
+--  __Note:__ 'TooManyParamsError' will only be thrown after the command's execution
+--  is attempted. This is because of the subcommand mechanism, which prevents the
+--  static determination of the number of required arguments.
 runSingleCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runSingleCommand c t = fromJust <$> runSingleCommandIf (c{commandTest = const True}) t
 

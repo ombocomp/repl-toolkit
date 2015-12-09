@@ -1,3 +1,5 @@
+1.0.0.1 Updated aeson dependency's upper bound.
+
 1.0 Refactored the package. Switched from lazy to strict text. Changed the types. Added user input as parameter for Asker error messages.
 
 0.5 Replaced system-filepath with filepath, as system-filepath has become deprecated. This is a minor, but breaking, change.
