@@ -1,12 +1,10 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE RankNTypes #-}
 
 -- |Provides Commands for REPLs. Commands are there to provide high-level
 --  handling of user input and to offer functionality in a standard, composable
 --  way.
+--
+--  
 --
 --  Use cases:
 --
@@ -45,12 +43,14 @@ module System.REPL.Command (
    oneOf,
    subcommand,
    makeREPL,
+   makeREPLSimple,
    -- *Exceptions
    -- |These are the exceptions that can be thrown during the course of command
    --  invocation (in addition to those that you throw yourself, of course).
    --
    --  SomeCommandError is an abstract exception and all others are its concrete
    --  subclasses. See the example in "Control.Exception" for details.
+   SomeREPLError(..),
    SomeCommandError(..),
    MalformedParamsError(..),
    TooFewParamsError(..),
@@ -78,6 +78,7 @@ module System.REPL.Command (
    noOpCmd,
    defExitCmd,
    defHelpCmd,
+   defErrorHandler,
    ) where
 
 import Prelude hiding (putStrLn, putStr, (++), length, replicate)
@@ -97,9 +98,9 @@ import Data.ListLike.IO (ListLikeIO(..))
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Ord
 import qualified Data.Text as T
-import Numeric.Peano
 import System.REPL.Ask
 import System.REPL.Types
+import qualified System.REPL.Prompt as PR
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Language as P
 import qualified Text.Parsec.Token as P
@@ -109,12 +110,13 @@ import qualified Text.Parsec.Token as P
 (++) = append
 
 -- |Runs the command with the input text as parameter, discarding any left-over
---  input.
+--  input. The command test is disregarded.
 runCommand :: (Monad m, MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runCommand c = fmap fst . runPartialCommand c <=< readArgs
 
 -- |Runs the command with the input text as parameter. If any input is left
 --  unconsumed, an error is thrown.
+--  The command test is disregarded.
 runSingleCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runSingleCommand c t = do
    t' <- readArgs t
@@ -158,7 +160,6 @@ subcommand :: (Monad m, Monoid i)
               -- ^The subcommands that may follow it. This list must be finite.
            -> Command m i b
 subcommand x xs = x Bi.>>- \y -> oneOf "" "" (L.map ($ y) xs)
-
 
 -- |Splits and trims the input of a command. If the input cannot be parsed, a
 --  'MalformedCommand' exception is thrown.
@@ -442,7 +443,7 @@ makeCommandN :: (MonadIO m, MonadCatch m)
 makeCommandN n t d canAsk necc opt f = Command n t d f'
    where
       min = P.length necc
-      max = natLength necc + natLength opt
+      -- max = natLength necc + natLength opt
 
       f' args = do neccParams <- unfoldrM (comb args) (necc,1, Nothing)
                    let x0 = maybe "" id (L.head args)
@@ -465,7 +466,7 @@ makeCommandN n t d canAsk necc opt f = Command n t d f'
          where args ys y = (y,(ys,i+1,j))
 
       askC True f xs _ i = ask f (xs L.!! i)
-      askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
+      askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs)) (ask f . Just) (xs L.!! i)
 
 -- |Prints out a list of command names, with their descriptions.
 summarizeCommands :: MonadIO m
@@ -490,7 +491,6 @@ askC :: (MonadIO m, MonadCatch m)
 askC True f xs _ i = ask f (xs L.!! i)
 askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
 
-
 -- |Runs a REPL based on a set of commands.
 --  For a line of input, the commands are tried in following order:
 --
@@ -509,9 +509,8 @@ makeREPL :: (MonadIO m, MonadCatch m)
             -- ^The asker to execute before each command (i.e. the prompt).
          -> [Handler m ()]
             -- ^List of Handlers for any exceptions that may arise.
-            --  Generally, you will want to handle at least the exceptions of this module
-            --  ('SomeCommandError', 'MalformedParamsError', 'TooManyParamsError',
-            --  'TooFewParamsError'), and whatever the 'Asker' can throw.
+            --  The exception hierchy is rooted in 'SomeREPLError'.
+            --  See "System.REPL.Types".
          -> m ()
             -- ^Asks the user repeatedly for input, until the input matches
             --  the command test of the "exit" command.
@@ -526,6 +525,20 @@ makeREPL regular exit unknown prompt handlers = void $ iterateUntil id iter
       unknown' = fmap (const False) $ unknown{commandTest = const True}
 
       allCommands = oneOf "" "" (exit' : regular' ++ [unknown'])
+
+-- |A variant of 'makeREPL' with some default settings:
+--
+--  * The "exit" command is 'defExitCmd'.
+--  * The "unknown" command prints "Unknown command: <user input>".
+--  * The prompt is "> ".
+--  * The error handler is 'defErrorHandler'.
+makeREPLSimple :: (MonadIO m, MonadCatch m)
+               => [Command m T.Text a]
+               -> m ()
+makeREPLSimple regular = makeREPL regular defExitCmd unknownCmd PR.prompt defErrorHandler
+   where
+      unknownCmd = makeCommandN "" (const True) "" False [] (repeat lineAsker)
+                                (\t _ -> liftIO $ PR.putStrLn $ "Unknown command: " ++ t)
 
 -- Example commands
 -------------------------------------------------------------------------------
@@ -565,3 +578,13 @@ defHelpCmd cmds = makeCommand n ((n==) . T.strip) "Prints this help text." help
    where
       n = ":help"
       help _ = liftIO $ mapM_ (\x -> putStrLn $ commandName x ++ " - " ++ commandDesc x) cmds
+
+-- |A default error handler that catches 'SomeREPLError' and prints it to stdout.
+--
+--  Useful in combination with 'makeREPL'.
+defErrorHandler :: MonadIO m
+                => [Handler m ()]
+defErrorHandler = [Handler h]
+   where
+      h :: MonadIO m => SomeREPLError -> m ()
+      h = liftIO . print

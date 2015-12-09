@@ -1,8 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
 
 -- |Little helper functions for getting and putting lines.
 --  
@@ -58,12 +56,12 @@ promptAbort abortChar s = do
    bufMode <- liftIO $ IO.hGetBuffering IO.stdin
    liftIO $ IO.hSetBuffering IO.stdin IO.NoBuffering
    input <- getUntil empty
-            `catch` (\(e :: AskFailure) ->
+            `catch` (\(e :: SomeAskerError) ->
                         liftIO (IO.hSetBuffering IO.stdin bufMode) >> throwM e)
    liftIO $ IO.hSetBuffering IO.stdin bufMode
    return $ reverse input
    where
       getUntil acc = do c <- liftIO $ getChar
-                        if c == abortChar then throwM AbortFailure
+                        if c == abortChar then throwM AskerInputAbortedError
                         else if c == '\n' then return acc
                         else                   getUntil (cons c acc)

@@ -1,6 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
@@ -20,11 +18,14 @@ module System.REPL.Ask (
    Asker(..),
    Asker',
    -- ** Exceptions
-   AskFailure(..),
-   GenericTypeFailure(..),
-   GenericPredicateFailure(..),
-   genericTypeFailure,
-   genericPredicateFailure,
+   SomeREPLError(..),
+   SomeAskerError(..),
+   AskerTypeError(..),
+   AskerPredicateError(..),
+   GenericTypeError(..),
+   GenericPredicateError(..),
+   genericTypeError,
+   genericPredicateError,
    -- * Creating askers
    -- |These are all just convenience functions.
    --  You can also create 'Asker's directly via the constructor.
@@ -202,19 +203,21 @@ ask' a = ask a Nothing
 
 -- |Executes an 'Asker'. If the Text argument is Nothing, the user is asked
 --  to enter a line on stdin. If it is @Just x@, @x@ is taken to be input.
+--  
+--  Additionally, the 
 askEither :: (MonadIO m, MonadCatch m)
           => Asker m a b
           -> Maybe T.Text
-          -> m (Either AskFailure b)
+          -> m (Either SomeAskerError b)
 askEither a = maybe getInput check
    where
       getInput = (promptAbort '\ESC' (askerPrompt a) >>= check)
                  `catch` (return . Left)
 
       check inp = case askerParser a inp of
-         Left err -> return $ Left $ TypeFailure err
+         Left err -> return . Left . SomeAskerError . AskerTypeError $ err
          Right t -> askerPredicate a t
-                    >>= return . (Left . PredicateFailure ||| Right)
+                    >>= return . (Left . SomeAskerError . AskerPredicateError ||| Right)
 
 -- |Repeatedly executes an ask action until the user enters a valid value.
 --  Error messages are printed each time.
@@ -223,7 +226,7 @@ untilValid :: forall m a.(MonadIO m, MonadCatch m, Read a)
            -> m a
 untilValid m = m `catch` handler
    where
-      handler :: AskFailure -> m a
+      handler :: SomeAskerError -> m a
       handler l = liftIO (putStrLn $ show l) >> untilValid m
 
 -- Creating predicates
