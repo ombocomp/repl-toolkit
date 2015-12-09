@@ -167,7 +167,7 @@ predAsker :: (Functor m)
           -> Asker m T.Text b
 predAsker pr f = Asker pr Right f
 
--- |A wrapper aroung 'getLine'. Prints no prompt and returns the user input as-is.
+-- |A wrapper around 'getLine'. Prints no prompt and returns the user input as-is.
 lineAsker :: Applicative m
           => Asker' m T.Text
 lineAsker = predAsker "" (pure . Right)
@@ -204,7 +204,7 @@ ask' a = ask a Nothing
 
 -- |Executes an 'Asker'. If the Text argument is Nothing, the user is asked
 --  to enter a line on stdin. If it is @Just x@, @x@ is taken to be input.
---  
+--
 --  Pressing the escape key returns a 'AskerInputAborterError' (if supported).
 askEither :: (MonadIO m, MonadCatch m)
           => Asker m a b
@@ -244,7 +244,7 @@ boolPredicate f errP t = (\case {True -> Right t; False -> Left (errP t)}) <$> f
 -------------------------------------------------------------------------------
 
 -- |Asks the user for a file or a directory.
--- 
+--
 --  Parsing checks for basic validity via 'System.FilePath.isValid'. Invalid paths are rejected.
 --
 --  After that, the asker determines whether the target exists and what type
@@ -309,7 +309,7 @@ writablefilepathAsker pr errT pred = filepathAsker pr errT pred'
       boolEither :: (Monad m, Exception a) => (m Bool) -> a -> m (Either SomeException b) -> m (Either SomeException b)
       boolEither x falseCase trueCase = x >>= (\case{True -> trueCase; False -> return $ Left $ SomeException falseCase})
 
-      pred' args@(_, fp) = 
+      pred' args@(_, fp) =
          if FP.isRelative fp then boolEither (liftIO $ isWritable D.getCurrentDirectory) (PathIsNotWritable fp) (pred args)
          else do
             existingRoot <- liftIO $ takeWhile snd <$> mapM (\x -> (x,) <$> doesExist x) (L.inits $ FP.splitDirectories fp)

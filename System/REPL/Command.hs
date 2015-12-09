@@ -13,7 +13,7 @@
 --
 --     @
 --     \{\-\# LANGUAGE OverloadedStrings \#\-\}
---     
+--
 --     import Data.Text (unpack)
 --
 --     asker :: Asker' IO String
@@ -21,7 +21,7 @@
 --
 --     cmd = makeCommand3 "command" ("command"==) "description" True [asker,asker,asker] (\t x y z -> putStrLn "yay!")
 --     @
---     
+--
 --     This is a command with 3 arguments. The user can enter the arguments
 --     in the same line or give them one by one:
 --
@@ -36,7 +36,7 @@
 --     Enter argument:
 --     >>> arg3
 --     yay!
---     
+--
 --     Had we set the bool above to @False@, only the first form would have been allowed.
 --
 --     Arguments can contain whitespace if they are surrounded with quotes:
@@ -55,7 +55,7 @@
 --
 --     >>> command arg1
 --     Required argument: arg1
---     
+--
 --     >>> command arg1 arg2
 --     Required argument: arg1
 --     Optional argument: arg2
@@ -71,7 +71,7 @@
 --
 --     main = makeREPLSimple [commit']
 --     @
--- 
+--
 --     >>> myVersionControl commit "my first commit" send-email
 --
 --     Here, @commit@ is the root command and @sendEmail@, @sendTweet@ its two
@@ -79,7 +79,7 @@
 --
 --  3. Making a REPL out of some commands.
 --
---     As above, one can use 'makeREPL' or 'makeREPLSimple' to create a 
+--     As above, one can use 'makeREPL' or 'makeREPLSimple' to create a
 --     REPL out of a list of commands and use it as the @main@ function instead
 --     of going through the chore of writing a loop it by hand.
 module System.REPL.Command (
@@ -163,9 +163,9 @@ import qualified Text.Parsec.Token as P
 
 -- |Runs the command with the input text as parameter, discarding any left-over
 --  input. The command test is disregarded.
--- 
+--
 --  Can throw:
---  
+--
 --  * 'MalformedParamsError'
 runCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runCommand c = fmap fst . runPartialCommand c <=< readArgs
@@ -174,7 +174,7 @@ runCommand c = fmap fst . runPartialCommand c <=< readArgs
 --  The command test is disregarded.
 --
 --  Can throw:
---  
+--
 --  * 'MalformedParamsError'
 --  * 'TooManyParamsError', if any input is left unconsumed.
 --
@@ -188,7 +188,7 @@ runSingleCommand c t = fromJust <$> runSingleCommandIf (c{commandTest = const Tr
 --  pass the command test, @Nothing@ is returned.
 --
 --  Can throw:
---  
+--
 --  * 'MalformedParamsError'
 --  * 'TooManyParamsError', if any input is left unconsumed.
 runSingleCommandIf :: MonadThrow m => Command m T.Text a -> T.Text -> m (Maybe a)
@@ -274,7 +274,7 @@ readArgs = either err return . P.parse parser "" . T.unpack
                         (Left l) -> fail (show l)
 
 -- |Gets the first part of a command string. Returns Nothing
---  if the string is empty of if 'readArgs' throws a 'MalformedParamsError'.
+--  if the string is empty or if 'readArgs' throws a 'MalformedParamsError'.
 getName :: T.Text -> Maybe T.Text
 getName = readArgs >=> L.head
 
@@ -577,7 +577,7 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
 -- |Throws a 'TooFewParamsError' if the length of the list is smaller than the second argument.
 checkParamNum :: MonadThrow m => [a] -> Int -> m ()
 checkParamNum xs need = if have < need then throwM $ TooFewParamsError need have else return ()
-   where have = length xs - 1 
+   where have = length xs - 1
 
 -- |Wrapper for 'ask'.
 askC :: (MonadIO m, MonadCatch m)
