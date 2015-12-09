@@ -34,7 +34,7 @@ import Data.Typeable
 
 -- |An error message indicating that a value wasn't able to be parsed.
 type TypeError = SomeException
--- |An error message indicating that a value failied a predicate.
+-- |An error message indicating that a value failed a predicate.
 type PredicateError = SomeException
 -- |A prompt.
 type PromptMsg = T.Text
@@ -54,7 +54,7 @@ type Parser a = T.Text -> Either TypeError a
 --  in case of failures.
 --
 --  The components are a prompt, a parser, and a predicate that
---  the parsed value must fulfil. The the predicate
+--  the parsed value must fulfil. The predicate
 --
 --  * is monadic and
 --  * can change the returned type (useful for adjoining additional information)
@@ -66,7 +66,7 @@ data Asker m a b = Asker{ -- |The prompt to be displayed to the user.
                           --  must fulfill. The Left side is an error message.
                           askerPredicate::Predicate m a b}
 
--- |An Asker which does not convert its argument into different type after parsing.
+-- |An Asker which does not convert its argument into a different type after parsing.
 type Asker' m a = Asker m a a
 
 -- |Root of the exception hierarchy.
@@ -92,7 +92,7 @@ askerErrorUpcast = toException . SomeAskerError
 askerErrorDowncast :: (Exception a) => SomeException -> Maybe a
 askerErrorDowncast x = do {SomeAskerError y <- fromException x; cast y}
 
--- |The input wasn't able to be parsed.
+-- |The input could not be parsed.
 data AskerTypeError = AskerTypeError SomeException deriving (Show, Typeable)
 instance Exception AskerTypeError where
    toException = askerErrorUpcast
@@ -146,7 +146,7 @@ data PathExistenceType = IsDirectory | IsFile | DoesNotExist deriving (Eq, Show,
 data PathRootDoesNotExist = PathRootDoesNotExist FilePath deriving (Typeable, Eq, Show)
 instance Exception PathRootDoesNotExist
 
--- |Indicatres that the last existing portion of a path is not writable.
+-- |Indicates that the last existing portion of a path is not writable.
 data PathIsNotWritable = PathIsNotWritable FilePath deriving (Typeable, Eq, Show)
 instance Exception PathIsNotWritable
 
@@ -168,7 +168,7 @@ commandErrorUpcast = toException . SomeCommandError
 commandErrorDowncast :: (Exception a) => SomeException -> Maybe a
 commandErrorDowncast x = do {SomeCommandError y <- fromException x; cast y}
 
--- |The input of a command was malformed and could not interpreted. I.e.
+-- |The input of a command was malformed and could not be interpreted. I.e.
 --  the input contained inadmissible characters, or quotes were mismatched.
 --  The 'Text' argument contains the parser error.
 data MalformedParamsError = MalformedParamsError T.Text deriving (Show, Eq, Typeable, Ord)
