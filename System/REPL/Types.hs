@@ -1,11 +1,20 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
 -- |Types used by other modules in the package.
+--
+--  The module contains the following exception hierarchy:
+--
+--  * 'SomeREPLError'
+--    * 'SomeAskerError'
+--      * 'AskerTypeError'
+--      * 'AskerPredicateError'
+--      * 'AskerInputAbortedError'
+--    * 'SomeCommandError'
+--      * 'MalformedParamsError'
+--      * 'TooFewParamsError'
+--      * 'TooManyParamsError'
+--
 module System.REPL.Types where
 
 import Control.Exception
@@ -54,39 +63,62 @@ data Asker m a b = Asker{ -- |The prompt to be displayed to the user.
 -- |An Asker which does not convert its argument into different type after parsing.
 type Asker' m a = Asker m a a
 
--- |Represents a failure during the running of an asking function.
---  Either the input was incorrect in some way, or the process was aborted
---  by the user.
-data AskFailure = -- |The input wasn't able to be parsed.
-                  TypeFailure SomeException
-                  -- |The parsed value failed a predicate.
-                  | PredicateFailure SomeException
-                  -- |The input was aborted by the user.
-                  | AbortFailure
-   deriving (Typeable)
+-- |Root of the exception hierarchy.
+data SomeREPLError = forall e.Exception e => SomeREPLError e deriving (Typeable)
+instance Show SomeREPLError where show (SomeREPLError e) = show e
+instance Exception SomeREPLError
 
-instance Exception AskFailure
+replErrorUpcast :: (Exception a) => a -> SomeException
+replErrorUpcast = toException . SomeREPLError
+replErrorDowncast :: (Exception a) => SomeException -> Maybe a
+replErrorDowncast x = do {SomeREPLError y <- fromException x; cast y}
 
-instance Show AskFailure where
-   show (PredicateFailure t) = "Predicate failure: " ++ show t
-   show (TypeFailure t) = "Type failure: " ++ show t
-   show AbortFailure = "Input aborted."
+-- |Generic error related to 'Asker's. Either the input was incorrect
+--  in some way, or the process was aborted by the user.
+data SomeAskerError = forall e.Exception e => SomeAskerError e deriving (Typeable)
+instance Show SomeAskerError where show (SomeAskerError e) = show e
+instance Exception SomeAskerError where
+   toException = replErrorUpcast
+   fromException = replErrorDowncast
+
+askerErrorUpcast :: (Exception a) => a -> SomeException
+askerErrorUpcast = toException . SomeAskerError
+askerErrorDowncast :: (Exception a) => SomeException -> Maybe a
+askerErrorDowncast x = do {SomeAskerError y <- fromException x; cast y}
+
+-- |The input wasn't able to be parsed.
+data AskerTypeError = AskerTypeError SomeException deriving (Show, Typeable)
+instance Exception AskerTypeError where
+   toException = askerErrorUpcast
+   fromException = askerErrorDowncast
+
+-- |The parsed value failed a predicate.
+data AskerPredicateError = AskerPredicateError SomeException deriving (Show, Typeable)
+instance Exception AskerPredicateError where
+   toException = askerErrorUpcast
+   fromException = askerErrorDowncast
+
+-- |The input for an Asker was aborted by the user.
+data AskerInputAbortedError = AskerInputAbortedError deriving (Show, Typeable)
+instance Exception AskerInputAbortedError where
+   toException = askerErrorUpcast
+   fromException = askerErrorDowncast
 
 -- |A generic type failure for use with Askers.
-data GenericTypeFailure = GenericTypeFailure T.Text deriving (Show, Typeable, Eq)
-instance Exception GenericTypeFailure
+data GenericTypeError = GenericTypeError T.Text deriving (Show, Typeable, Eq)
+instance Exception GenericTypeError
 
--- |Constructor for 'GenericTypeFailure' which wraps the value into a 'SomeException'.
-genericTypeFailure :: T.Text -> SomeException
-genericTypeFailure = SomeException . GenericTypeFailure
+-- |Constructor for 'GenericTypeError' which wraps the value into a 'SomeException'.
+genericTypeError :: T.Text -> SomeException
+genericTypeError = SomeException . GenericTypeError
 
 -- |A generic predicate failure for use with Askers.
-data GenericPredicateFailure = GenericPredicateFailure T.Text deriving (Show, Typeable, Eq)
-instance Exception GenericPredicateFailure
+data GenericPredicateError = GenericPredicateError T.Text deriving (Show, Typeable, Eq)
+instance Exception GenericPredicateError
 
--- |Constructor for 'GenericTypeFailure' which wraps the value into a 'SomeException'.
-genericPredicateFailure :: T.Text -> SomeException
-genericPredicateFailure = SomeException . GenericPredicateFailure
+-- |Constructor for 'GenericTypeError' which wraps the value into a 'SomeException'.
+genericPredicateError :: T.Text -> SomeException
+genericPredicateError = SomeException . GenericPredicateError
 
 -- |A verbatim Text whose Read instance simply returns the read
 --  string, as-is.
@@ -112,7 +144,6 @@ instance Exception PathRootDoesNotExist
 data PathIsNotWritable = PathIsNotWritable FilePath deriving (Typeable, Eq, Show)
 instance Exception PathIsNotWritable
 
-
 -- Command types
 -------------------------------------------------------------------------------
 
@@ -122,7 +153,9 @@ instance Exception PathIsNotWritable
 -- |Generic error related to command execution.
 data SomeCommandError = forall e.Exception e => SomeCommandError e deriving (Typeable)
 instance Show SomeCommandError where show (SomeCommandError e) = show e
-instance Exception SomeCommandError
+instance Exception SomeCommandError where
+   toException = replErrorUpcast
+   fromException = replErrorDowncast
 
 commandErrorUpcast :: (Exception a) => a -> SomeException
 commandErrorUpcast = toException . SomeCommandError
