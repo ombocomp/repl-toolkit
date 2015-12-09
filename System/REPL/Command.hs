@@ -547,14 +547,11 @@ makeCommandN n t d canAsk necc opt f = Command n t d f'
       --  the state is of type @([Asker m a e], Int)@. The second component @i@
       --  indicates that the @i@th parameter is to be read.
       comb _ ([],_,_) = return Nothing
-      comb inp (x:xs, i, j) =
-         if isJust j && fromJust j < i then return Nothing
-         else askC x inp i >$> args xs >$> Just
-
-         where args ys y = (y,(ys,i+1,j))
-
-      --askC True f xs _ i = ask f (xs L.!! i)
-      --askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs)) (ask f . Just) (xs L.!! i)
+      comb inp (x:xs, i, j) = if isJust j && fromJust j < i
+                              then return Nothing
+                              else askC x inp i >$> args xs >$> Just
+         where
+            args ys y = (y,(ys,i+1,j))
 
 -- |Prints out a list of command names, with their descriptions.
 summarizeCommands :: MonadIO m
