@@ -23,7 +23,7 @@
 --
 module System.REPL.Types where
 
-import Control.Exception
+import Control.Exception (SomeException(..), Exception(..))
 import qualified Data.Functor.Apply as Ap
 import qualified Data.Functor.Bind as Bi
 import qualified Data.Text as T

@@ -77,8 +77,9 @@ module System.REPL.Ask (
    -- |A few askers for convenience.
    PathRootDoesNotExist(..),
    PathIsNotWritable(..),
+   PathExistenceType(..),
    filepathAsker,
-   writablefilepathAsker,
+   writableFilepathAsker,
    ) where
 
 import Prelude hiding (putStrLn, putStr, getLine, reverse)
@@ -287,13 +288,13 @@ filepathAsker pr errT pred = Asker pr parse pred'
 --
 --  * 'System.IO.Error.isPermissionError'
 --  * 'System.IO.Error.isDoesNotExistError'
-writablefilepathAsker
+writableFilepathAsker
    :: MonadIO m
    => PromptMsg
    -> (FilePath -> TypeError)
    -> Predicate m (PathExistenceType, FilePath) b
    -> Asker m FilePath b
-writablefilepathAsker pr errT pred = filepathAsker pr errT pred'
+writableFilepathAsker pr errT pred = filepathAsker pr errT pred'
    where
       permError e = if ERR.isPermissionErrorType (ERR.ioeGetErrorType e) ||
                        ERR.isDoesNotExistErrorType (ERR.ioeGetErrorType e)

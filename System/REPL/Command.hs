@@ -676,6 +676,9 @@ defHelpCmd cmds = makeCommand n ((n==) . T.strip) "Prints this help text." help
 
 -- |A default error handler that catches 'SomeREPLError' and prints it to stdout.
 --
+--  Since all the sub-types of 'SomeREPLError' just wrap a 'SomeException', we
+--  use the 'Show'-instance of that inner exception.
+--
 --  Useful in combination with 'makeREPL'.
 defErrorHandler :: MonadIO m
                 => [Handler m ()]
