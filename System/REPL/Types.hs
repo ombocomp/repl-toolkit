@@ -111,6 +111,9 @@ data AskerInputAbortedError = AskerInputAbortedError deriving (Show, Typeable)
 instance Exception AskerInputAbortedError where
    toException = askerErrorUpcast
    fromException = askerErrorDowncast
+-- |Prints "Input aborted."
+instance PPH.Pretty AskerInputAbortedError where
+   pPrint AskerInputAbortedError = PP.text "Input aborted."
 
 -- |A generic type failure for use with Askers.
 data GenericTypeError = GenericTypeError T.Text deriving (Show, Typeable, Eq)
@@ -204,8 +207,8 @@ instance Exception TooFewParamsError where
    toException = commandErrorUpcast
    fromException = commandErrorDowncast
 -- |Prints "Too few parameters! Got <# of params>, expected at least <# of max. params>."
-instance PPH.Pretty TooManyFewError where
-   pPrint (TooManyFewError e g) =
+instance PPH.Pretty TooFewParamsError where
+   pPrint (TooFewParamsError e g) =
       PP.text $ mconcat ["Too many parameters! Got ", show g,
                          ", expected at least", show e, "."]
 
