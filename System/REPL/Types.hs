@@ -25,8 +25,6 @@ import qualified Data.Functor.Apply as Ap
 import qualified Data.Functor.Bind as Bi
 import qualified Data.Text as T
 import Data.Typeable
-import qualified Text.PrettyPrint as PP
-import qualified Text.PrettyPrint.HughesPJClass as PPH
 
 -- Asker types
 -------------------------------------------------------------------------------
@@ -108,15 +106,10 @@ data AskerInputAbortedError = AskerInputAbortedError deriving (Show, Typeable)
 instance Exception AskerInputAbortedError where
    toException = askerErrorUpcast
    fromException = askerErrorDowncast
--- |Prints "Input aborted."
-instance PPH.Pretty AskerInputAbortedError where
-   pPrint AskerInputAbortedError = PP.text "Input aborted."
 
 -- |A generic type failure for use with Askers.
 data GenericTypeError = GenericTypeError T.Text deriving (Show, Typeable, Eq)
 instance Exception GenericTypeError
-instance PPH.Pretty GenericTypeError where
-   pPrint (GenericTypeError t) = PP.text $ T.unpack t
 
 -- |Constructor for 'GenericTypeError' which wraps the value into a 'SomeException'.
 genericTypeError :: T.Text -> SomeException
@@ -125,8 +118,6 @@ genericTypeError = SomeException . GenericTypeError
 -- |A generic predicate failure for use with Askers.
 data GenericPredicateError = GenericPredicateError T.Text deriving (Show, Typeable, Eq)
 instance Exception GenericPredicateError
-instance PPH.Pretty GenericPredicateError where
-   pPrint (GenericPredicateError t) = PP.text $ T.unpack t
 
 -- |Constructor for 'GenericTypeError' which wraps the value into a 'SomeException'.
 genericPredicateError :: T.Text -> SomeException
@@ -181,9 +172,6 @@ data MalformedParamsError = MalformedParamsError T.Text deriving (Show, Eq, Type
 instance Exception MalformedParamsError where
    toException = commandErrorUpcast
    fromException = commandErrorDowncast
--- |Prints the contained text, preceded by "Malformed parameters: "
-instance PPH.Pretty MalformedParamsError where
-   pPrint (MalformedParamsError t) = PP.text $ "Malformed parameters:" ++ T.unpack t
 
 -- |Too many parameters were given to a command. The first value is the maximum,
 --  the second the actual number.
@@ -191,11 +179,6 @@ data TooManyParamsError = TooManyParamsError Int Int deriving (Show, Eq, Typeabl
 instance Exception TooManyParamsError where
    toException = commandErrorUpcast
    fromException = commandErrorDowncast
--- |Prints "Too many parameters! Got <# of params>, expected at most <# of max. params>."
-instance PPH.Pretty TooManyParamsError where
-   pPrint (TooManyParamsError e g) =
-      PP.text $ mconcat ["Too many parameters! Got ", show g,
-                         ", expected at most", show e, "."]
 
 -- |Too few parameters were given to a command. The first value is the minium,
 --  the second the actual number.
@@ -203,11 +186,6 @@ data TooFewParamsError = TooFewParamsError Int Int deriving (Show, Eq, Typeable,
 instance Exception TooFewParamsError where
    toException = commandErrorUpcast
    fromException = commandErrorDowncast
--- |Prints "Too few parameters! Got <# of params>, expected at least <# of max. params>."
-instance PPH.Pretty TooFewParamsError where
-   pPrint (TooFewParamsError e g) =
-      PP.text $ mconcat ["Too many parameters! Got ", show g,
-                         ", expected at least", show e, "."]
 
 -- Command type
 -------------------------------------------------------------------------------

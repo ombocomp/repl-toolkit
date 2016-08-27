@@ -155,8 +155,6 @@ import qualified System.REPL.Prompt as PR
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Language as P
 import qualified Text.Parsec.Token as P
-import qualified Text.PrettyPrint as PP
-import qualified Text.PrettyPrint.HughesPJClass as PPH
 
 -- alias for Data.ListLike.append
 (++) :: (ListLike full item) => full -> full -> full
@@ -677,21 +675,82 @@ defHelpCmd cmds = makeCommand n ((n==) . T.strip) "Prints this help text." help
 
 -- |A default error handler that catches 'SomeREPLError' and prints it to stdout.
 --
---  Since all the sub-types of 'SomeREPLError' just wrap a 'SomeException', we
---  use the 'Show'-instance of that inner exception.
+--  For the following errors, we print a user-friendly error message:
+--
+-- * 'GenericTypeError' (when wrapped in an 'AskerTypeError'),
+-- * 'GenericPredicateError' (when wrapped in an 'AskerPredicateError'),
+-- * 'PathRootDoesNotExist' (when wrapped in an 'AskerPredicateError'),
+-- * 'PathIsNotWritable' (when wrapped in an 'AskerPredicateError'),
+-- * 'GenericPredicateError' (when wrapped in an 'AskerPredicateError'),
+-- * 'AskerInputAbortedError',
+-- * 'MalformedParamsError',
+-- * 'TooManyParamsError',
+-- * 'TooFewParamsError',
+-- * 'NoConfigFileParseError'.
+--
+--  For every other subtype of 'SomeREPLError', we just print the Show-instance.
 --
 --  Useful in combination with 'makeREPL'.
 defErrorHandler :: MonadIO m
                 => [Handler m ()]
-defErrorHandler = [Handler h]
+defErrorHandler =
+   [Handler h_askerGenericTypeError,
+    Handler h_askerGenericPredicateError,
+    Handler h_askerPathRootDoesNotExist,
+    Handler h_askerPathIsNotWritable,
+    Handler h_tooMalformedParamsError,
+    Handler h_tooManyParamsError,
+    Handler h_tooFewParamsError,
+    Handler h_noConfigFileParseError,
+    Handler h]
    where
+      put :: String -> IO ()
+      put = putStrLn
+
       h :: MonadIO m => SomeREPLError -> m ()
       h = liftIO . print
 
-      h_askerTypeError
-         :: MonadIO m
-         => AskerTypeError
-         -> m ()
-      h_askerTypeError (AskerTypeError e) = case cast e of
-         (Just (x :: PPH.Pretty a => a)) -> liftIO . print . PP.render . PPH.pPrint a
-         Nothing -> liftIO (print e)
+      h_askerGenericTypeError :: MonadIO m => AskerTypeError -> m ()
+      h_askerGenericTypeError (AskerTypeError e) = case cast e of
+         Just (GenericTypeError t) -> liftIO . put . T.unpack $ t
+         Nothing -> liftIO . print $ e
+
+
+      h_askerGenericPredicateError :: MonadIO m => AskerPredicateError -> m ()
+      h_askerGenericPredicateError (AskerPredicateError e) = case cast e of
+         Just (GenericPredicateError t) -> liftIO . put . T.unpack $ t
+         Nothing -> liftIO . print $ e
+
+      h_askerPathRootDoesNotExist :: MonadIO m => AskerPredicateError -> m ()
+      h_askerPathRootDoesNotExist (AskerPredicateError e) = case cast e of
+         Just (PathRootDoesNotExist fp) -> liftIO $ put $
+                                           "The root of the path '" ++ fp ++
+                                           "' does not exist."
+         Nothing -> liftIO . print $ e
+
+      h_askerPathIsNotWritable :: MonadIO m => AskerPredicateError -> m ()
+      h_askerPathIsNotWritable (AskerPredicateError e) = case cast e of
+         Just (PathIsNotWritable fp) -> liftIO $ put $
+                                           "The path '" ++ fp ++
+                                           "' is not writable."
+         Nothing -> liftIO . print $ e
+
+      h_askerInputAbortedError :: MonadIO m => AskerTypeError -> m ()
+      h_askerInputAbortedError (AskerTypeError e) =
+         liftIO $ put "Input aborted."
+
+      h_tooMalformedParamsError :: MonadIO m => MalformedParamsError -> m ()
+      h_tooMalformedParamsError (MalformedParamsError t) = liftIO . put $
+         "Error parsing parameters: " ++ T.unpack t
+
+      h_tooManyParamsError :: MonadIO m => TooManyParamsError -> m ()
+      h_tooManyParamsError (TooManyParamsError m x) = liftIO . put $
+         "Expected at most " ++ show m ++ " parameters, got " ++ show x ++ "."
+
+      h_tooFewParamsError :: MonadIO m => TooFewParamsError -> m ()
+      h_tooFewParamsError (TooFewParamsError m x) = liftIO . put $
+         "Expected at least " ++ show m ++ " parameters, got " ++ show x ++ "."
+
+      h_noConfigFileParseError :: MonadIO m => NoConfigFileParseError -> m ()
+      h_noConfigFileParseError (NoConfigFileParseError t) = liftIO . put $
+         "Error parsing configuration file: " ++ T.unpack t
