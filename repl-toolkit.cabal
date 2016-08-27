@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                repl-toolkit
-version:             1.0.1.0
+version:             1.1.0.0
 synopsis:            Toolkit for quickly whipping up config files and command-line interfaces.
 description:         A simple toolkit for quickly whipping up REPLs, input validation and sets of commands included.
 homepage:            https://github.com/ombocomp/repl-toolkit
@@ -27,7 +27,7 @@ library
                        System.REPL.Prompt,
                        System.REPL.State,
                        System.REPL.Types
-  other-extensions:    OverloadedStrings,
+  default-extensions:  OverloadedStrings,
                        DeriveDataTypeable,
                        FlexibleContexts,
                        LambdaCase,

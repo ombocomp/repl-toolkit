@@ -1,6 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE ExistentialQuantification #-}
-
 -- |Types used by other modules in the package.
 --
 --  The module contains the following exception hierarchy:

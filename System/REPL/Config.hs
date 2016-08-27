@@ -1,6 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-
 -- |Contains logic for reading configuration files.
 module System.REPL.Config (
    readConfigFile,

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- |Provides Commands for REPLs. Commands are there to provide high-level
 --  handling of user input and to offer functionality in a standard, composable
 --  way.
@@ -149,6 +147,7 @@ import Data.ListLike(ListLike(..))
 import Data.ListLike.IO (ListLikeIO(..))
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Ord
+import Data.Typeable (cast)
 import qualified Data.Text as T
 import System.REPL.Ask
 import System.REPL.Types
@@ -156,6 +155,8 @@ import qualified System.REPL.Prompt as PR
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Language as P
 import qualified Text.Parsec.Token as P
+import qualified Text.PrettyPrint as PP
+import qualified Text.PrettyPrint.HughesPJClass as PPH
 
 -- alias for Data.ListLike.append
 (++) :: (ListLike full item) => full -> full -> full
@@ -686,3 +687,11 @@ defErrorHandler = [Handler h]
    where
       h :: MonadIO m => SomeREPLError -> m ()
       h = liftIO . print
+
+      h_askerTypeError
+         :: MonadIO m
+         => AskerTypeError
+         -> m ()
+      h_askerTypeError (AskerTypeError e) = case cast e of
+         (Just (x :: PPH.Pretty a => a)) -> liftIO . print . PP.render . PPH.pPrint a
+         Nothing -> liftIO (print e)

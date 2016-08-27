@@ -1,9 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- |Little helper functions for getting and putting lines.
---  
+--
 --  This module re-exports part of "Data.ListLike.IO", which contains names that clash with Prelude.
 module System.REPL.Prompt (
    -- *String-generic versions of Prelude Functions
