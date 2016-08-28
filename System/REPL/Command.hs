@@ -579,14 +579,12 @@ summarizeCommands xs = liftIO $ mapM_ (\c -> prName c >> prDesc c) xs
 -- |Throws a 'TooFewParamsError' if the length of the list is smaller than the second argument.
 checkParamNum :: MonadThrow m => [a] -> Int -> m ()
 checkParamNum xs need = if have < need then throwM $ TooFewParamsError need have else return ()
-   where have = length xs - 1
+   where have = max 0 (length xs - 1)
 
 -- |Wrapper for 'ask'.
 askC :: (MonadIO m, MonadCatch m)
      => Asker m a0 a -> [T.Text] -> Int -> m a
 askC f xs i = ask f (xs L.!! i)
-
---askC False f xs j i = maybe (throwM $ TooFewParamsError j (length xs - 1)) (ask f . Just) (xs L.!! i)
 
 -- |Runs a REPL based on a set of commands.
 --  For a line of input, the commands are tried in following order:
@@ -626,6 +624,7 @@ makeREPL regular exit unknown prompt handlers = void $ iterateUntil id iter
 -- |A variant of 'makeREPL' with some default settings:
 --
 --  * The "exit" command is 'defExitCmd'.
+--  * Commands consistining only of whitespace are ignored.
 --  * The "unknown" command prints "Unknown command: <user input>".
 --  * The prompt is "> ".
 --  * The error handler is 'defErrorHandler'.
@@ -634,8 +633,11 @@ makeREPLSimple :: (MonadIO m, MonadCatch m)
                -> m ()
 makeREPLSimple regular = makeREPL regular defExitCmd unknownCmd PR.prompt defErrorHandler
    where
-      unknownCmd = makeCommandN "" (const True) "" False [] (repeat lineAsker)
-                                (\t _ -> liftIO $ PR.putStrLn $ "Unknown command: " ++ t)
+      unknownCmd = makeCommandN "" (const True) "" False [] (repeat lineAsker) f
+
+      f t ts = if T.all isSpace t && L.all (T.all isSpace) ts
+               then return ()
+               else liftIO $ PR.putStrLn $ "Unknown command: " ++ t ++ "."
 
 -- Example commands
 -------------------------------------------------------------------------------
