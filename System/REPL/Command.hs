@@ -183,8 +183,10 @@ runCommand c = fmap fst . runPartialCommand c <=< readArgs
 runSingleCommand :: (MonadThrow m) => Command m T.Text a -> T.Text -> m a
 runSingleCommand c t = fromJust <$> runSingleCommandIf (c{commandTest = const True}) t
 
--- |Runs the command with the input text as parameter. If the input doesn't
---  pass the command test, @Nothing@ is returned.
+-- |Runs the command with the input text as parameter.
+--
+--  The first parameter (or the empty string, if no input was given)
+--  is passed to the command test. If it fails the test, 'Nothing' is returned.
 --
 --  Can throw:
 --
@@ -193,7 +195,8 @@ runSingleCommand c t = fromJust <$> runSingleCommandIf (c{commandTest = const Tr
 runSingleCommandIf :: MonadThrow m => Command m T.Text a -> T.Text -> m (Maybe a)
 runSingleCommandIf c t = do
    t' <- readArgs t
-   if L.null t' || not (commandTest c $ LU.head t') then return Nothing
+   let t'' = if L.null t' then "" else LU.head t'
+   if not (commandTest c t'') then return Nothing
    else do
       (res, output) <- runPartialCommand c t'
       let act = length t'
