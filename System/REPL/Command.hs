@@ -711,25 +711,25 @@ defErrorHandler =
       h = liftIO . print
 
       h_askerGenericTypeError :: MonadIO m => AskerTypeError -> m ()
-      h_askerGenericTypeError (AskerTypeError e) = case cast e of
+      h_askerGenericTypeError (AskerTypeError e) = case fromException e of
          Just (GenericTypeError t) -> liftIO . put . T.unpack $ t
          Nothing -> liftIO . print $ e
 
 
       h_askerGenericPredicateError :: MonadIO m => AskerPredicateError -> m ()
-      h_askerGenericPredicateError (AskerPredicateError e) = case cast e of
+      h_askerGenericPredicateError (AskerPredicateError e) = case fromException e of
          Just (GenericPredicateError t) -> liftIO . put . T.unpack $ t
          Nothing -> liftIO . print $ e
 
       h_askerPathRootDoesNotExist :: MonadIO m => AskerPredicateError -> m ()
-      h_askerPathRootDoesNotExist (AskerPredicateError e) = case cast e of
+      h_askerPathRootDoesNotExist (AskerPredicateError e) = case fromException e of
          Just (PathRootDoesNotExist fp) -> liftIO $ put $
                                            "The root of the path '" ++ fp ++
                                            "' does not exist."
          Nothing -> liftIO . print $ e
 
       h_askerPathIsNotWritable :: MonadIO m => AskerPredicateError -> m ()
-      h_askerPathIsNotWritable (AskerPredicateError e) = case cast e of
+      h_askerPathIsNotWritable (AskerPredicateError e) = case fromException e of
          Just (PathIsNotWritable fp) -> liftIO $ put $
                                            "The path '" ++ fp ++
                                            "' is not writable."
