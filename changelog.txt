@@ -1,3 +1,5 @@
+1.0.2.0 Expanded defErrorHandler with user-friendly messages.
+
 1.0.1.0 Fixed name clashes with base, added new exports, fixed typos.
 
 1.0.0.1 Updated aeson dependency's upper bound.
