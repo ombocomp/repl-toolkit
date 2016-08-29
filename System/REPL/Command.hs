@@ -199,11 +199,10 @@ runSingleCommandIf c t = do
    if not (commandTest c t'') then return Nothing
    else do
       (res, output) <- runPartialCommand c t'
-      let act = length t'
+      let act = max 0 (length t' - 1)
           mx  = act - length output
       when (not . L.null $ output) (throwM $ TooManyParamsError mx act)
       return $ Just res
-
 
 -- |Takes a list @xs@ and executes the first command in a list whose
 --  'commandTest' matches the input.
@@ -750,11 +749,19 @@ defErrorHandler =
 
       h_tooManyParamsError :: MonadIO m => TooManyParamsError -> m ()
       h_tooManyParamsError (TooManyParamsError m x) = liftIO . put $
-         "Expected at most " ++ show m ++ " parameters, got " ++ show x ++ "."
+         "Expected " ++ exp ++ " parameters, got " ++ got
+         where
+            exp = if m > 0
+                  then "at most " ++ show m
+                  else "no"
+
+            got = if x <= 0 then "none." else show x ++ "."
 
       h_tooFewParamsError :: MonadIO m => TooFewParamsError -> m ()
       h_tooFewParamsError (TooFewParamsError m x) = liftIO . put $
-         "Expected at least " ++ show m ++ " parameters, got " ++ show x ++ "."
+         "Expected at least " ++ show m ++ " parameters, got " ++ got
+         where
+            got = if x <= 0 then "none." else show x ++ "."
 
       h_noConfigFileParseError :: MonadIO m => NoConfigFileParseError -> m ()
       h_noConfigFileParseError (NoConfigFileParseError t) = liftIO . put $
